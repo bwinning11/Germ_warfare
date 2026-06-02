@@ -1,6 +1,8 @@
 import { buildMap } from './map'
 import { income } from './economy'
 import { applyColonize, COLONIZE_TICKS } from './spread'
+import { updateHeat, heatStage } from './heat'
+import { applyImmune } from './immune'
 import type { GameState, Order } from './types'
 
 // Re-export so tests can import COLONIZE_TICKS from './dive'
@@ -23,6 +25,9 @@ export function initialState(): GameState {
     map: { ...map, zones },
     biomass: 0,
     colonizeProgress: {},
+    heat: 0,
+    dormant: false,
+    responders: [],
   }
 }
 
@@ -30,19 +35,62 @@ export function initialState(): GameState {
  * Advances the simulation by one tick. Pure — never mutates state.
  *
  * Order of operations each tick:
- *   1. Apply colonize orders (advance infection / flip ownership).
- *   2. Add biomass income (+1 per you-owned zone).
+ *   1. Apply dormancy order (toggle dormant flag) if present.
+ *   2. Apply colonize orders — skipped if dormant.
+ *   3. Update heat: rises (owned zones + colonize activity) or decays (dormant).
+ *      Heat bump from zone losses (step 4) is folded in here.
+ *   4. Compute heat stage; spawn/act responders if alerted+.
+ *      Zone losses from responders contribute a heat bump (applied retroactively to heat).
+ *   5. Add biomass income (+1 per you-owned zone after all changes).
  */
 export function step(state: GameState, orders: Order[]): GameState {
-  // 1. Apply colonize orders
-  const afterOrders = applyColonize(state, orders)
+  // 1. Handle dormancy toggle
+  const hasDormancyOrder = orders.some(o => o.type === 'dormancy')
+  const dormant = hasDormancyOrder ? !state.dormant : state.dormant
 
-  // 2. Biomass income
-  const gained = income(afterOrders)
+  // 2. Apply colonize orders (skipped while dormant)
+  const colonizeOrders = orders.filter(o => o.type === 'colonize') as Extract<Order, { type: 'colonize' }>[]
+
+  const afterColonize = dormant
+    ? { ...state, dormant }
+    : applyColonize({ ...state, dormant }, colonizeOrders)
+
+  // Track whether colonizing was actively happening (for heat rise bonus)
+  const isColonizing = !dormant && colonizeOrders.length > 0 && colonizeOrders.some(o => {
+    // Check if the order was valid (i.e. progress actually moved)
+    const before = state.colonizeProgress[o.target] ?? 0
+    const after = afterColonize.colonizeProgress[o.target] ?? 0
+    // If after > before, progress moved; or if after < before, zone was captured
+    return after !== before || afterColonize.map.zones.find(z => z.id === o.target)?.owner === 'you'
+  })
+
+  const ownedCount = afterColonize.map.zones.filter(z => z.owner === 'you').length
+
+  // 3. Compute stage BEFORE immune (to determine if responders act this tick)
+  const stage = heatStage(state.heat)
+
+  // 4. Apply immune (responders act; accumulate zone-loss heat bump)
+  const { zones: afterImmune, responders, heatBump } = applyImmune(
+    afterColonize.map.zones,
+    afterColonize.responders ?? state.responders,
+    stage,
+  )
+
+  // 5. Update heat (incorporates zone-loss bump from this tick)
+  const newHeat = updateHeat(state.heat, ownedCount, dormant, isColonizing, heatBump)
+
+  // 6. Biomass income (based on zones after all changes)
+  const afterImmuneState: GameState = {
+    ...afterColonize,
+    map: { ...afterColonize.map, zones: afterImmune },
+    responders,
+  }
+  const gained = income(afterImmuneState)
 
   return {
-    ...afterOrders,
-    tick: afterOrders.tick + 1,
-    biomass: afterOrders.biomass + gained,
+    ...afterImmuneState,
+    tick: afterImmuneState.tick + 1,
+    heat: newHeat,
+    biomass: afterImmuneState.biomass + gained,
   }
 }

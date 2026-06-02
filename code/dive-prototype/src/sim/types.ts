@@ -26,6 +26,11 @@ export interface NeighborRef {
   barrier: boolean
 }
 
+/** A single innate immune responder placed in a zone. */
+export interface Responder {
+  zone: ZoneId
+}
+
 /**
  * The complete, serialisable state of the simulation at a single tick.
  */
@@ -35,6 +40,12 @@ export interface GameState {
   biomass: number
   /** In-progress colonize operations: zone id → ticks invested so far */
   colonizeProgress: Record<ZoneId, number>
+  /** Body-wide alarm level. Rises with owned-zone count; decays while dormant. */
+  heat: number
+  /** Whether the player is hiding (no colonize progress; heat decays). */
+  dormant: boolean
+  /** Active innate immune responders (one per targeted zone). */
+  responders: Responder[]
 }
 
 /** Colonize order: direct your infection toward an adjacent non-barrier zone. */
@@ -44,6 +55,14 @@ export interface ColonizeOrder {
 }
 
 /**
+ * Dormancy order: toggle stealth mode. While dormant, colonize halts and heat decays.
+ * Issue again to resume active spread.
+ */
+export interface DormancyOrder {
+  type: 'dormancy'
+}
+
+/**
  * A player or AI instruction applied at the start of each tick.
  */
-export type Order = ColonizeOrder
+export type Order = ColonizeOrder | DormancyOrder
