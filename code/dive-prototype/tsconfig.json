@@ -15,5 +15,10 @@
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // The production build typechecks app code only. Test files are typechecked
+  // and run by Vitest (npm test), which uses its own glob — excluding them here
+  // keeps `tsc` from failing the build on test-only unused-var lint. No test
+  // files are removed from the suite; all sim tests still run via `npm test`.
+  "exclude": ["src/**/*.test.ts"]
 }
