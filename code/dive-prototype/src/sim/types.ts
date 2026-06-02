@@ -31,6 +31,9 @@ export interface Responder {
   zone: ZoneId
 }
 
+/** Outcome of a dive: still running, successful escape, or caught by immune system. */
+export type DiveResult = 'ongoing' | 'escape' | 'caught'
+
 /**
  * The complete, serialisable state of the simulation at a single tick.
  */
@@ -48,6 +51,10 @@ export interface GameState {
   dormant: boolean
   /** Active innate immune responders (one per targeted zone). */
   responders: Responder[]
+  /** Current outcome of the dive. Once not 'ongoing', no further ticks advance. */
+  result: DiveResult
+  /** Virality points banked when the dive ends. 0 while ongoing; 0 on caught. */
+  banked: number
 }
 
 /** Colonize order: direct your infection toward an adjacent non-barrier zone. */
@@ -76,6 +83,16 @@ export interface BreachOrder {
 }
 
 /**
+ * Escape order: attempt to exit the body through a portal zone that the player owns.
+ * Valid only when the named portal exists, is kind:'portal', and is owner:'you'.
+ * On success the dive ends immediately with result:'escape' and virality banked.
+ */
+export interface EscapeOrder {
+  type: 'escape'
+  portal: ZoneId
+}
+
+/**
  * A player or AI instruction applied at the start of each tick.
  */
-export type Order = ColonizeOrder | DormancyOrder | BreachOrder
+export type Order = ColonizeOrder | DormancyOrder | BreachOrder | EscapeOrder

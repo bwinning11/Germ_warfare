@@ -9,6 +9,22 @@ import type { GameState, Order } from './types'
 // Re-export so tests can import COLONIZE_TICKS from './dive'
 export { COLONIZE_TICKS }
 
+// ─── Virality constants (tunable) ─────────────────────────────────────────────
+
+/** Virality points earned per zone held at the moment of escape. */
+export const VIRALITY_PER_ZONE = 10
+
+/** Virality points earned per tick survived at the moment of escape. */
+export const VIRALITY_PER_TICK = 2
+
+/**
+ * Computes the virality (reward) banked at the end of a successful escape.
+ * Monotonically increases with both zonesHeld and ticksSurvived.
+ */
+export function virality(zonesHeld: number, ticksSurvived: number): number {
+  return zonesHeld * VIRALITY_PER_ZONE + ticksSurvived * VIRALITY_PER_TICK
+}
+
 /**
  * Returns a fresh GameState at tick 0 using the prototype map.
  * The 'entry' zone starts owned by the player.
@@ -30,6 +46,8 @@ export function initialState(): GameState {
     heat: 0,
     dormant: false,
     responders: [],
+    result: 'ongoing',
+    banked: 0,
   }
 }
 
@@ -46,6 +64,24 @@ export function initialState(): GameState {
  *   5. Add biomass income (+1 per you-owned zone after all changes).
  */
 export function step(state: GameState, orders: Order[]): GameState {
+  // Guard: terminal states do not advance.
+  if (state.result !== 'ongoing') return state
+
+  // Check for a valid escape order: named portal must be kind:'portal' AND owner:'you'
+  const escapeOrder = orders.find(o => o.type === 'escape') as Extract<Order, { type: 'escape' }> | undefined
+  if (escapeOrder) {
+    const portal = state.map.zones.find(z => z.id === escapeOrder.portal)
+    if (portal && portal.kind === 'portal' && portal.owner === 'you') {
+      const zonesHeld = state.map.zones.filter(z => z.owner === 'you').length
+      return {
+        ...state,
+        result: 'escape',
+        banked: virality(zonesHeld, state.tick),
+      }
+    }
+    // Invalid escape order — fall through to normal tick processing
+  }
+
   // 1. Handle dormancy toggle
   const hasDormancyOrder = orders.some(o => o.type === 'dormancy')
   const dormant = hasDormancyOrder ? !state.dormant : state.dormant
@@ -95,6 +131,18 @@ export function step(state: GameState, orders: Order[]): GameState {
     responders,
   }
   const gained = income(afterImmuneState)
+
+  // 7. Check if heat has hit overwhelming → caught
+  if (heatStage(newHeat) === 'overwhelming') {
+    return {
+      ...afterImmuneState,
+      tick: afterImmuneState.tick + 1,
+      heat: newHeat,
+      biomass: afterImmuneState.biomass + gained,
+      result: 'caught',
+      banked: 0,
+    }
+  }
 
   return {
     ...afterImmuneState,
