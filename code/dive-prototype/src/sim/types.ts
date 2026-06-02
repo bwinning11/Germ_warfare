@@ -40,6 +40,8 @@ export interface GameState {
   biomass: number
   /** In-progress colonize operations: zone id → ticks invested so far */
   colonizeProgress: Record<ZoneId, number>
+  /** In-progress breach operations: zone id → ticks invested so far */
+  breachProgress: Record<ZoneId, number>
   /** Body-wide alarm level. Rises with owned-zone count; decays while dormant. */
   heat: number
   /** Whether the player is hiding (no colonize progress; heat decays). */
@@ -63,6 +65,17 @@ export interface DormancyOrder {
 }
 
 /**
+ * Breach order: work through a barrier edge to open it permanently.
+ * Target is the barrier-gated zone (e.g. 'gland'). A you-owned zone must
+ * border that zone via a barrier edge. After BREACH_TICKS the edge becomes
+ * passable and a subsequent colonize order will be accepted.
+ */
+export interface BreachOrder {
+  type: 'breach'
+  target: ZoneId
+}
+
+/**
  * A player or AI instruction applied at the start of each tick.
  */
-export type Order = ColonizeOrder | DormancyOrder
+export type Order = ColonizeOrder | DormancyOrder | BreachOrder
