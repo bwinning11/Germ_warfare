@@ -1,8 +1,11 @@
 import type { GameState, ColonizeOrder, Zone } from './types'
 import { neighbors } from './map'
 
-/** Number of consecutive ticks a colonize order must be applied to flip a zone. */
-export const COLONIZE_TICKS = 3
+/**
+ * Number of consecutive ticks a colonize order must be applied to flip a zone.
+ * At ~800ms/tick this makes a spread land in ~1.6s, so a click feels responsive.
+ */
+export const COLONIZE_TICKS = 2
 
 /**
  * Checks whether a colonize order is valid:

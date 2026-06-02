@@ -83,10 +83,10 @@ describe('result / escape / caught', () => {
   // ── (c) heat reaching overwhelming → result:caught, banked:0 ──────────────
   it('when heat hits overwhelming after the tick → result:caught, banked:0', () => {
     const s0 = stateOwningPortal()
-    // Inject heat just below overwhelming so ONE tick pushes it over
-    // HEAT_THRESHOLD_OVERWHELMING = 90; with 1 zone owned, heat rises 2/tick
-    // Set heat to 88 → next tick adds 2 → 90 → overwhelming
-    const hotState = { ...s0, heat: 88 }
+    // Inject heat just below overwhelming so ONE tick pushes it over.
+    // HEAT_THRESHOLD_OVERWHELMING = 90; with 1 zone owned, heat rises 1/tick
+    // (HEAT_RISE_PER_OWNED_ZONE = 1). Set heat to 89 → next tick adds 1 → 90 → overwhelming.
+    const hotState = { ...s0, heat: 89 }
     const s1 = step(hotState, [])
     expect(s1.result).toBe('caught')
     expect(s1.banked).toBe(0)
@@ -102,7 +102,7 @@ describe('result / escape / caught', () => {
   })
 
   it('step on caught terminal state returns it unchanged', () => {
-    const s0 = { ...stateOwningPortal(), heat: 88 }
+    const s0 = { ...stateOwningPortal(), heat: 89 }
     const terminal = step(s0, [])
     expect(terminal.result).toBe('caught')
     const again = step(terminal, [{ type: 'dormancy' }])

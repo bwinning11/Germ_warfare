@@ -17,15 +17,21 @@ export const HEAT_THRESHOLD_ACTIVE = 50
 export const HEAT_THRESHOLD_OVERWHELMING = 90
 
 // ─── Rise / decay constants ───────────────────────────────────────────────────
+//
+// Tuned for a *first* dive to be survivable while the player is still learning.
+// With the loop at ~800ms/tick, a lone foothold rises 1/tick (~1.25/sec), so the
+// player has well over ten seconds of reading the bar before 'alerted' (20) and
+// plenty of runway to react before 'active' (50). Dormancy decays faster than a
+// small hold rises, so going Dormant always visibly pulls Heat back down.
 
 /** Heat added per tick per you-owned zone (base pressure). */
-export const HEAT_RISE_PER_OWNED_ZONE = 2
+export const HEAT_RISE_PER_OWNED_ZONE = 1
 
 /** Extra heat added per tick when at least one colonize order is active. */
-export const HEAT_RISE_ACTIVE_COLONIZE = 3
+export const HEAT_RISE_ACTIVE_COLONIZE = 2
 
 /** Heat removed per tick while dormant (replaces rise). */
-export const HEAT_DECAY_DORMANT = 4
+export const HEAT_DECAY_DORMANT = 5
 
 // ─── Stage classifier ────────────────────────────────────────────────────────
 

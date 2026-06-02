@@ -1,14 +1,18 @@
 // main.ts — Dive Prototype entry point.
 //
 // Wires the pure simulation (src/sim) to canvas rendering (src/render) and
-// player input (src/input). Runs an active-pause loop (~2 ticks/sec, Space
-// toggles pause), collects orders from clicks/keys, feeds them to step() each
-// tick, and re-renders on every tick AND on every input so the board feels
-// responsive. Dormancy and escape are applied immediately on input.
+// player input (src/input). Runs an active-pause loop, collects orders from
+// clicks/keys, feeds them to step() each tick, and re-renders continuously so
+// the board feels responsive and warning/feedback animations can pulse.
+//
+// First-dive legibility lives here too: the dive starts FROZEN behind an
+// onboarding overlay. The sim does not advance — and Heat does not rise — until
+// the player clicks to begin. The most recent command is held as `lastAction`
+// so the renderer can show a loud, named feedback banner.
 
 import { initialState, step } from './sim/dive'
 import type { GameState, Order } from './sim/types'
-import { render } from './render/render'
+import { render, type LastAction } from './render/render'
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from './render/layout'
 import { clickToOrder, keyToAction } from './input/input'
 
@@ -25,6 +29,12 @@ let state: GameState = initialState()
 let paused = false
 
 /**
+ * Whether the dive has begun. Starts false: the onboarding overlay is up and
+ * the sim is frozen (no ticks, Heat stays at 0) until the player clicks begin.
+ */
+let started = false
+
+/**
  * The player's current sustained command. Colonize and breach require the same
  * order to be re-sent every tick to accumulate progress, so we hold the latest
  * one here and feed it in on each tick until it completes or is replaced.
@@ -35,6 +45,40 @@ let sustained: Order | null = null
 
 /** One-shot orders (dormancy, escape) queued by the most recent input. */
 let oneShot: Order[] = []
+
+/** Most recent player command, for the loud feedback banner. Cleared on expiry. */
+let lastAction: LastAction | null = null
+let lastActionUntil = 0
+
+const ACTION_BANNER_MS = 2200
+
+// Human-readable zone names for feedback banners.
+const ZONE_LABEL: Record<string, string> = {
+  entry: 'ENTRY',
+  vessel_a: 'VESSEL A',
+  vessel_b: 'VESSEL B',
+  organ: 'ORGAN',
+  gland: 'GLAND',
+}
+
+function setAction(a: LastAction): void {
+  lastAction = a
+  lastActionUntil = performance.now() + ACTION_BANNER_MS
+}
+
+/** Turns an Order into the loud banner shown to the player. */
+function bannerFor(order: Order): LastAction {
+  switch (order.type) {
+    case 'colonize':
+      return { kind: 'colonize', label: `SPREADING → ${ZONE_LABEL[order.target] ?? order.target}`, targetZone: order.target }
+    case 'breach':
+      return { kind: 'breach', label: `BREACHING → ${ZONE_LABEL[order.target] ?? order.target}…`, targetZone: order.target }
+    case 'escape':
+      return { kind: 'escape', label: `ESCAPING via ${ZONE_LABEL[order.portal] ?? order.portal}`, targetZone: order.portal }
+    case 'dormancy':
+      return { kind: 'dormancy', label: 'GOING DORMANT — Heat cooling' }
+  }
+}
 
 // ── Order assembly ───────────────────────────────────────────────────────────
 
@@ -61,26 +105,42 @@ function collectOrders(): Order[] {
 
 // ── Tick + render ────────────────────────────────────────────────────────────
 
-const TICK_INTERVAL_MS = 500 // ~2 ticks/sec
+// Slowed from 500ms so a first-time player can read the Heat bar climbing and
+// react before danger. Pairs with the lowered HEAT_RISE_* / *_TICKS constants.
+const TICK_INTERVAL_MS = 800
 
 function advance(): void {
   if (state.result !== 'ongoing') return
   const orders = collectOrders()
   state = step(state, orders)
   // Drop a sustained command once it has finished its job.
-  if (sustained && sustainedComplete(state, sustained)) sustained = null
+  if (sustained && sustainedComplete(state, sustained)) {
+    sustained = null
+    // Let a finished spread's banner fade rather than linger forever.
+    if (lastAction && (lastAction.kind === 'colonize' || lastAction.kind === 'breach')) {
+      lastActionUntil = Math.min(lastActionUntil, performance.now() + 600)
+    }
+  }
 }
 
 function draw(): void {
-  render(ctx!, state, paused)
+  const now = performance.now()
+  if (lastAction && now > lastActionUntil) lastAction = null
+  render(ctx!, state, paused, { started, lastAction, nowMs: now })
 }
 
+// Sim ticks on a fixed interval; only advances once started, unpaused, ongoing.
 const intervalId = setInterval(() => {
-  if (!paused && state.result === 'ongoing') advance()
-  draw()
+  if (started && !paused && state.result === 'ongoing') advance()
 }, TICK_INTERVAL_MS)
 
-draw() // initial paint before the first interval fires
+// Continuous repaint so warning glows and feedback banners animate smoothly.
+let rafId = 0
+function frame(): void {
+  draw()
+  rafId = requestAnimationFrame(frame)
+}
+rafId = requestAnimationFrame(frame)
 
 // ── Input: mouse ──────────────────────────────────────────────────────────────
 
@@ -93,6 +153,13 @@ function canvasPoint(e: MouseEvent): { x: number; y: number } {
 }
 
 canvas.addEventListener('click', (e: MouseEvent) => {
+  // First click dismisses onboarding and begins the dive — it issues no order,
+  // so the player can't accidentally fling a command while orienting.
+  if (!started) {
+    started = true
+    return
+  }
+
   if (state.result !== 'ongoing') return
   const { x, y } = canvasPoint(e)
   const order = clickToOrder(state, x, y)
@@ -101,13 +168,14 @@ canvas.addEventListener('click', (e: MouseEvent) => {
   if (order.type === 'colonize' || order.type === 'breach') {
     // Sustained command — replaces any previous one. Takes effect on ticks.
     sustained = order
+    setAction(bannerFor(order))
   } else if (order.type === 'escape') {
     // Escape resolves immediately so it feels instant — but not while paused
     // (a paused game is a true freeze). Queue it; it fires on resume otherwise.
     oneShot.push(order)
+    setAction(bannerFor(order))
     if (!paused) state = step(state, collectOrders())
   }
-  draw()
 })
 
 // ── Input: keyboard ────────────────────────────────────────────────────────
@@ -117,13 +185,14 @@ window.addEventListener('keydown', (e: KeyboardEvent) => {
 
   if (action.kind === 'pause') {
     e.preventDefault() // stop page scroll on Space
+    if (!started) return // Space does nothing while onboarding is up
     paused = !paused
-    draw()
     return
   }
 
   if (action.kind === 'order') {
     e.preventDefault()
+    if (!started) return
     if (state.result !== 'ongoing') return
     if (action.order.type === 'dormancy') {
       // Apply dormancy immediately so the stealth toggle feels instant. While
@@ -133,7 +202,12 @@ window.addEventListener('keydown', (e: KeyboardEvent) => {
       } else {
         state = step(state, [action.order, ...collectOrders()])
       }
-      draw()
+      // Banner reflects the resulting mode (entering vs leaving dormancy).
+      if (state.dormant || paused) {
+        setAction(bannerFor(action.order))
+      } else {
+        setAction({ kind: 'dormancy', label: 'WAKING — resuming spread' })
+      }
     }
   }
 })
@@ -142,5 +216,8 @@ window.addEventListener('keydown', (e: KeyboardEvent) => {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 if ((import.meta as any).hot) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ;(import.meta as any).hot.dispose(() => clearInterval(intervalId))
+  ;(import.meta as any).hot.dispose(() => {
+    clearInterval(intervalId)
+    cancelAnimationFrame(rafId)
+  })
 }

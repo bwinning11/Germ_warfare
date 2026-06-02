@@ -1,8 +1,11 @@
 import type { GameState, BreachOrder, ZoneId } from './types'
 import { neighbors } from './map'
 
-/** Number of consecutive ticks a breach order must be applied to open a barrier edge. */
-export const BREACH_TICKS = 3
+/**
+ * Number of consecutive ticks a breach order must be applied to open a barrier edge.
+ * Matched to COLONIZE_TICKS so breaching feels as responsive as spreading (~1.6s).
+ */
+export const BREACH_TICKS = 2
 
 /**
  * Checks whether a breach order is valid:
