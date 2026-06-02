@@ -1,16 +1,17 @@
 export type ZoneKind = 'portal' | 'connective' | 'organ' | 'gland'
 export type Owner = 'none' | 'you'
+export type ZoneId = string
 
 export interface Zone {
-  id: string
+  id: ZoneId
   kind: ZoneKind
   owner: Owner
   infection: number
 }
 
 export interface Edge {
-  from: string
-  to: string
+  from: ZoneId
+  to: ZoneId
   barrier: boolean
 }
 
@@ -21,24 +22,28 @@ export interface GameMap {
 
 /** What neighbors() returns for each adjacent zone */
 export interface NeighborRef {
-  id: string
+  id: ZoneId
   barrier: boolean
 }
 
 /**
  * The complete, serialisable state of the simulation at a single tick.
- * Intentionally minimal — future tasks will add biomass, heat, etc. as
- * additional optional fields on this same interface.
  */
 export interface GameState {
   tick: number
   map: GameMap
-  // Future fields (biomass, heat, spread, …) will be added here.
+  biomass: number
+  /** In-progress colonize operations: zone id → ticks invested so far */
+  colonizeProgress: Record<ZoneId, number>
+}
+
+/** Colonize order: direct your infection toward an adjacent non-barrier zone. */
+export interface ColonizeOrder {
+  type: 'colonize'
+  target: ZoneId
 }
 
 /**
  * A player or AI instruction applied at the start of each tick.
- * Starts as an empty union — later tasks will add real variants
- * (e.g. { kind: 'spread'; from: string; to: string }).
  */
-export type Order = never
+export type Order = ColonizeOrder
