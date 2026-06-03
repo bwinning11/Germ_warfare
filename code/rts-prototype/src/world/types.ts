@@ -70,6 +70,43 @@ export interface Entity {
  */
 export type GermKind = 'spreader' | 'brute' | 'spitter';
 
+// ---------------------------------------------------------------------------
+// Capturable control points
+// ---------------------------------------------------------------------------
+
+/**
+ * The four kinds of capturable control points on the map.
+ *
+ * - 'organ'           : the existing win-condition objective (hold to win).
+ * - 'nutrient_node'   : increases passive biomass income while held.
+ * - 'forward_colony'  : auto-produced units can spawn/rally here (closer to front).
+ * - 'choke_fortress'  : buffs nearby player units' damage while held.
+ */
+export type CapturePointKind = 'organ' | 'nutrient_node' | 'forward_colony' | 'choke_fortress';
+
+/**
+ * A control point on the map that can be captured and held.
+ * Distinct from Entity — it's a static map object, not a mobile unit.
+ */
+export interface CapturePoint {
+  /** Unique id — stable across the match. */
+  id: string;
+  kind: CapturePointKind;
+  /** World-space position (chamber centre). */
+  pos: { x: number; y: number };
+  /** Current owner. Starts 'neutral'. */
+  owner: Owner;
+  /**
+   * Capture timer in seconds.  Climbs toward POINT_CAPTURE_TIME while held
+   * uncontested; stalls while contested; decays while not held.
+   */
+  captureProgress: number;
+  /** True when both player and immune units are present simultaneously. */
+  contested: boolean;
+  /** Display radius (px) used for hold-zone and rendering. */
+  radius: number;
+}
+
 /**
  * Production mix — the relative weights the auto-builder uses to decide which
  * unit type to produce next.  A weight of 0 means that type is disabled.
@@ -130,4 +167,13 @@ export interface World {
    * Higher = heavier adaptive pushes incoming.
    */
   threatLevel: number;
+
+  /**
+   * All capturable control points on the map (excluding the organ, which is
+   * still tracked as an Entity for historical reasons).
+   *
+   * Includes: nutrient_node, forward_colony, choke_fortress.
+   * The organ win-condition logic remains in captureProgress / organContested.
+   */
+  capturePoints: CapturePoint[];
 }

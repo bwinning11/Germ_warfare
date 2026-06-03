@@ -6,6 +6,7 @@
 import { World, Entity, ProductionMix, GermKind } from './types';
 import { nextId } from './world';
 import { computeWaypoints } from './map';
+import { nutrientNodeBonus, forwardColonySpawnPos, forwardColonyRallyPoint } from './capturePoints';
 
 // ---------------------------------------------------------------------------
 // Unit type definitions
@@ -46,10 +47,12 @@ export const INCOME_RATE = 12; // biomass/s
 /**
  * Advance the economy by `dt` seconds.
  * Adds passive trickle income to `world.biomass`.
+ * Also applies the nutrient-node bonus if the player holds that point.
  * Mutates world in place.
  */
 export function tickIncome(world: World, dt: number): void {
-  world.biomass += INCOME_RATE * dt;
+  const bonus = world.capturePoints ? nutrientNodeBonus(world) : 0;
+  world.biomass += (INCOME_RATE + bonus) * dt;
 }
 
 // ---------------------------------------------------------------------------
@@ -85,11 +88,21 @@ export function produce(
 
   // Find the player's base to spawn near it.
   const base = world.entities.find((e) => e.kind === 'base' && e.owner === 'you');
-  const spawnPos = base
+  const basePos = base
     ? { x: base.pos.x + 30 + Math.random() * 20, y: base.pos.y + (Math.random() - 0.5) * 40 }
     : { x: world.width * 0.15, y: world.height * 0.5 };
 
-  const moveTo = world.rallyPoint ? { ...world.rallyPoint } : null;
+  // If the forward colony is held, spawn there instead of the base.
+  const spawnPos = world.capturePoints
+    ? forwardColonySpawnPos(world, basePos)
+    : basePos;
+
+  // Rally point: forward colony overrides world.rallyPoint for auto-produced units.
+  const effectiveRally = world.capturePoints
+    ? forwardColonyRallyPoint(world)
+    : world.rallyPoint;
+
+  const moveTo = effectiveRally ? { ...effectiveRally } : null;
   const waypoints = moveTo ? computeWaypoints(spawnPos, moveTo) : [];
 
   const unit: Entity = {

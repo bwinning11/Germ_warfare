@@ -4,6 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import { World, Entity } from './types';
+import { inFortressBuff, FORTRESS_DAMAGE_MULT } from './capturePoints';
 
 // ---------------------------------------------------------------------------
 // Combat stat definitions
@@ -200,7 +201,18 @@ export function tickCombat(world: World, dt: number): void {
 
     // --- Attack if cooldown is ready ---
     if (newCd === 0) {
-      target.hp -= def.damage;
+      // Apply fortress damage buff when the player holds the choke fortress
+      // and the attacker is a player unit within the buff radius.
+      let damage = def.damage;
+      if (
+        attacker.owner === 'you' &&
+        world.capturePoints &&
+        inFortressBuff(world, attacker.pos)
+      ) {
+        damage = damage * FORTRESS_DAMAGE_MULT;
+      }
+
+      target.hp -= damage;
       attacker.data.attackCooldownLeft = def.cooldown;
 
       const isRanged = def.range > 60;

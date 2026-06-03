@@ -18,6 +18,7 @@ import {
   AdaptiveState,
 } from './immune';
 import { BODY_MAP, computeWaypoints } from './map';
+import { makeCapturePoints, tickCapturePoints } from './capturePoints';
 
 // ---------------------------------------------------------------------------
 // Module-level immune state — lives alongside the world singleton
@@ -146,6 +147,7 @@ export function createWorld(width: number, height: number): World {
     productionMix,
     buildAccumulator: 0,
     threatLevel: 0,
+    capturePoints: makeCapturePoints(),
   };
 }
 
@@ -166,6 +168,7 @@ export function resetWorld(world: World): void {
   world.productionMix = fresh.productionMix;
   world.buildAccumulator = fresh.buildAccumulator;
   world.threatLevel = fresh.threatLevel;
+  world.capturePoints = fresh.capturePoints;
 }
 
 // ---------------------------------------------------------------------------
@@ -302,6 +305,9 @@ export function update(world: World, dt: number): World {
   tickCombat(world, dt);
   removeDeadEntities(world);
   updateEffects(dt);
+
+  // --- Capturable control points (nutrient node / forward colony / choke fortress) ---
+  tickCapturePoints(world, dt);
 
   // --- Objective: capture the organ (may set gameState = 'won') ---
   tickCapture(world, dt);

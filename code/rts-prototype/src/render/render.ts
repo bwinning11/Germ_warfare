@@ -12,6 +12,7 @@ import { waveState, adaptiveState } from '../world/world';
 import { ADAPTIVE_PUSH_INTERVAL } from '../world/immune';
 import { CAPTURE_TIME, CAPTURE_RADIUS, findOrgan } from '../world/capture';
 import { BODY_MAP } from '../world/map';
+import { POINT_CAPTURE_TIME, FORTRESS_BUFF_RADIUS } from '../world/capturePoints';
 
 const ENTITY_COLORS: Record<string, string> = {
   placeholder: '#44ff88',
@@ -364,6 +365,142 @@ function drawNeutrophil(
   ctx.fillRect(bx, by, barW, barH);
   ctx.fillStyle = '#ff8800';
   ctx.fillRect(bx, by, barW * Math.max(0, entity.hp / entity.maxHp), barH);
+}
+
+// ---------------------------------------------------------------------------
+// Capturable control-point rendering
+// ---------------------------------------------------------------------------
+
+/** Icon colours per capture point kind. */
+const CP_COLORS: Record<string, string> = {
+  nutrient_node:   '#44ff99',  // green — income
+  forward_colony:  '#3388ff',  // blue — production
+  choke_fortress:  '#ffaa22',  // amber — defense/buff
+};
+
+const CP_LABELS: Record<string, string> = {
+  nutrient_node:   'NUTRIENT +income',
+  forward_colony:  'COLONY +spawn here',
+  choke_fortress:  'FORTRESS +dmg buff',
+};
+
+/**
+ * Draw all non-organ capturable control points.
+ *
+ * Each point shows:
+ *  - Capture-zone dashed ring
+ *  - Filled icon whose colour reflects type
+ *  - Progress arc that fills as the player captures it
+ *  - Owner state label (NEUTRAL / YOURS / CONTESTED / ENEMY)
+ *  - Fortress also draws its buff-radius ring when held
+ */
+function drawCapturePoints(ctx: CanvasRenderingContext2D, world: World): void {
+  for (const cp of (world.capturePoints ?? [])) {
+    const { x, y } = cp.pos;
+    const color = CP_COLORS[cp.kind] ?? '#ffffff';
+    const r = 18; // icon radius
+    const frac = Math.min(1, cp.captureProgress / POINT_CAPTURE_TIME);
+    const owned = cp.owner === 'you';
+    const contested = cp.contested;
+    const neutral = cp.owner === 'neutral';
+
+    // --- Fortress buff radius ring (only when held by player) ---
+    if (cp.kind === 'choke_fortress' && owned) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 170, 34, 0.25)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.arc(x, y, FORTRESS_BUFF_RADIUS, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
+    // --- Capture-zone ring ---
+    ctx.save();
+    const ringColor = contested
+      ? 'rgba(255,70,90,0.5)'
+      : owned
+        ? `${color}55`
+        : 'rgba(200,200,200,0.25)';
+    ctx.strokeStyle = ringColor;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.arc(x, y, cp.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // --- Outer glow ---
+    const glowColor = contested ? '#ff3344' : color;
+    const grd = ctx.createRadialGradient(x, y, 0, x, y, r * 2.5);
+    grd.addColorStop(0, glowColor + '44');
+    grd.addColorStop(1, 'transparent');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(x, y, r * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // --- Icon body (circle for neutral/contested, filled for owned) ---
+    ctx.save();
+    ctx.fillStyle = owned ? color : (neutral ? '#333344' : '#661122');
+    ctx.strokeStyle = owned ? color : (contested ? '#ff4455' : '#666688');
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // --- Inner type indicator ---
+    ctx.save();
+    ctx.fillStyle = owned ? '#000' : color;
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const sym = cp.kind === 'nutrient_node' ? '$'
+               : cp.kind === 'forward_colony' ? '+'
+               : '★'; // star for fortress
+    ctx.fillText(sym, x, y);
+    ctx.restore();
+
+    // --- Capture progress arc ---
+    if (frac > 0) {
+      ctx.save();
+      ctx.strokeStyle = contested ? '#ff5566' : color;
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.shadowColor = ctx.strokeStyle;
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.arc(x, y, r + 6, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // --- State label below the icon ---
+    const stateLabel = contested ? 'CONTESTED'
+      : owned       ? 'YOURS'
+      : cp.owner === 'immune' ? 'ENEMY'
+      : 'NEUTRAL';
+    const stateColor = contested ? '#ff8899'
+      : owned     ? color
+      : cp.owner === 'immune' ? '#ff5566'
+      : '#888899';
+
+    ctx.save();
+    ctx.fillStyle = stateColor;
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(stateLabel, x, y + r + 4);
+    ctx.fillStyle = '#aaaacc';
+    ctx.font = '8px monospace';
+    ctx.fillText(CP_LABELS[cp.kind] ?? cp.kind, x, y + r + 14);
+    ctx.restore();
+  }
 }
 
 /**
@@ -1469,6 +1606,9 @@ export function render(
 
   // Draw rally point before units so units render on top
   drawRallyPoint(ctx, world, input);
+
+  // Capture control points (under units so units render on top)
+  drawCapturePoints(ctx, world);
 
   // Organ first (under units) so units holding it render on top of the gland
   const organ = findOrgan(world);
