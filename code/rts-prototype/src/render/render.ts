@@ -3,6 +3,8 @@
 // ---------------------------------------------------------------------------
 
 import { World, Entity } from '../world/types';
+import { InputState, MoveMarker } from '../input/input';
+import { normaliseRect } from '../world/selection';
 
 const ENTITY_COLORS: Record<string, string> = {
   placeholder: '#44ff88',
@@ -48,10 +50,27 @@ function drawBackground(ctx: CanvasRenderingContext2D, width: number, height: nu
 }
 
 /** Draw a single entity as a circle with a direction indicator. */
-function drawEntity(ctx: CanvasRenderingContext2D, entity: Entity): void {
+function drawEntity(
+  ctx: CanvasRenderingContext2D,
+  entity: Entity,
+  selected: boolean,
+): void {
   const { x, y } = entity.pos;
-  const radius = entity.kind === 'placeholder' ? 14 : 12;
+  const radius = 12;
   const color = entityColor(entity);
+
+  // Selection ring (drawn below glow so it's visible)
+  if (selected) {
+    ctx.save();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#88eeff';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(x, y, radius + 5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   // Glow effect
   const grd = ctx.createRadialGradient(x, y, 0, x, y, radius * 2);
@@ -70,7 +89,7 @@ function drawEntity(ctx: CanvasRenderingContext2D, entity: Entity): void {
 
   // Direction dot (shows velocity direction)
   const speed = Math.hypot(entity.vel.x, entity.vel.y);
-  if (speed > 0.001) {
+  if (speed > 0.5) {
     const nx = entity.vel.x / speed;
     const ny = entity.vel.y / speed;
     ctx.fillStyle = '#000';
@@ -92,6 +111,46 @@ function drawEntity(ctx: CanvasRenderingContext2D, entity: Entity): void {
   }
 }
 
+/** Draw the drag-selection box. */
+function drawDragBox(ctx: CanvasRenderingContext2D, input: InputState): void {
+  if (!input.isDragging || !input.dragBox) return;
+
+  const { x, y, w, h } = normaliseRect(input.dragBox);
+
+  ctx.save();
+  ctx.strokeStyle = '#44ccff';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 3]);
+  ctx.strokeRect(x, y, w, h);
+  ctx.fillStyle = 'rgba(68, 204, 255, 0.06)';
+  ctx.fillRect(x, y, w, h);
+  ctx.restore();
+}
+
+/** Draw brief move-order markers at right-click targets. */
+function drawMoveMarkers(ctx: CanvasRenderingContext2D, markers: MoveMarker[]): void {
+  for (const m of markers) {
+    const alpha = Math.max(0, m.ttl / 0.5); // fade out over marker lifetime
+    const r = 8 * (1 - alpha * 0.5);        // slightly shrinks as it fades
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(m.pos.x, m.pos.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    // Cross-hair lines
+    ctx.beginPath();
+    ctx.moveTo(m.pos.x - r, m.pos.y);
+    ctx.lineTo(m.pos.x + r, m.pos.y);
+    ctx.moveTo(m.pos.x, m.pos.y - r);
+    ctx.lineTo(m.pos.x, m.pos.y + r);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 /** Overlay shown when paused. */
 function drawPauseOverlay(ctx: CanvasRenderingContext2D, width: number, height: number): void {
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
@@ -103,27 +162,41 @@ function drawPauseOverlay(ctx: CanvasRenderingContext2D, width: number, height: 
   ctx.fillText('PAUSED', width / 2, height / 2);
 }
 
-/** HUD — elapsed time top-left. */
-function drawHUD(ctx: CanvasRenderingContext2D, world: World): void {
+/** HUD — elapsed time + entity count + selection count. */
+function drawHUD(
+  ctx: CanvasRenderingContext2D,
+  world: World,
+  input: InputState,
+): void {
   ctx.fillStyle = '#aaffaa';
   ctx.font = '12px monospace';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(`t = ${world.elapsed.toFixed(2)}s`, 10, 10);
   ctx.fillText(`entities: ${world.entities.length}`, 10, 26);
+  ctx.fillText(`selected: ${input.selected.size}`, 10, 42);
 }
 
-/** Main render entry point — call once per animation frame. */
-export function render(ctx: CanvasRenderingContext2D, world: World): void {
+// ---------------------------------------------------------------------------
+// Main render entry point — call once per animation frame.
+// ---------------------------------------------------------------------------
+
+export function render(
+  ctx: CanvasRenderingContext2D,
+  world: World,
+  input: InputState,
+): void {
   const { width, height } = world;
 
   drawBackground(ctx, width, height);
 
   for (const entity of world.entities) {
-    drawEntity(ctx, entity);
+    drawEntity(ctx, entity, input.selected.has(entity.id));
   }
 
-  drawHUD(ctx, world);
+  drawDragBox(ctx, input);
+  drawMoveMarkers(ctx, input.moveMarkers);
+  drawHUD(ctx, world, input);
 
   if (world.paused) {
     drawPauseOverlay(ctx, width, height);

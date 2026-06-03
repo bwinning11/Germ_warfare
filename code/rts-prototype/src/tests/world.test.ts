@@ -33,18 +33,18 @@ describe('update()', () => {
     expect(entity.pos.y).toBe(y0);
   });
 
-  it('bounces entity off the right wall', () => {
+  it('clamps entity to arena walls (no bouncing)', () => {
     const world = createWorld(1100, 740);
     const entity = world.entities[0];
 
-    // Jam the entity against the right wall moving right
+    // Place entity beyond the right wall with rightward velocity
     entity.pos.x = 1100;
     entity.vel.x = 200;
 
     update(world, 1 / 60);
 
-    // After bounce, velocity should be negative (moving left)
-    expect(entity.vel.x).toBeLessThan(0);
+    // Position must not exceed arena width
+    expect(entity.pos.x).toBeLessThanOrEqual(1100);
   });
 
   it('increments world.elapsed by dt', () => {

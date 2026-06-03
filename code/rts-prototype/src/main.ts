@@ -3,9 +3,9 @@
 // Sets up the canvas, wires up input, and runs the fixed-timestep game loop.
 // ---------------------------------------------------------------------------
 
-import { createWorld } from './world/world';
-import { update } from './world/world';
+import { createWorld, update } from './world/world';
 import { render } from './render/render';
+import { createInputState, attachInput, updateMarkers } from './input/input';
 
 // ---------------------------------------------------------------------------
 // Canvas setup
@@ -17,14 +17,20 @@ const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 canvas.width  = CANVAS_W;
 canvas.height = CANVAS_H;
 
+// Prevent the right-click context menu on the canvas
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
 const ctxMaybe = canvas.getContext('2d');
 if (!ctxMaybe) throw new Error('Could not get 2D canvas context.');
 const ctx: CanvasRenderingContext2D = ctxMaybe;
 
 // ---------------------------------------------------------------------------
-// World
+// World + input state
 // ---------------------------------------------------------------------------
 const world = createWorld(CANVAS_W, CANVAS_H);
+const inputState = createInputState();
+
+attachInput(canvas, world, inputState);
 
 // ---------------------------------------------------------------------------
 // Input — Space bar toggles pause
@@ -66,11 +72,12 @@ function loop(timestamp: number): void {
 
     while (accumulator >= FIXED_DT) {
       update(world, FIXED_DT);
+      updateMarkers(inputState, FIXED_DT);
       accumulator -= FIXED_DT;
     }
   }
 
-  render(ctx, world);
+  render(ctx, world, inputState);
 
   requestAnimationFrame(loop);
 }
