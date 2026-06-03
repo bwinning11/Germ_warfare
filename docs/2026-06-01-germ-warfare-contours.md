@@ -249,6 +249,8 @@ A **horizontal-unlock** roguelite (Slay the Spire model): a *run* = one campaign
 
 ## 14. Tone & aesthetic
 
+**Visual target (RTS):** Command & Conquer. **Classic isometric** (Red Alert / Tiberian Dawn) for the **MVP** — pre-rendered 3D→sprite art in a 2D engine; scaling to **real-time 3D** (Generals / C&C 3) as the **end state**. Gameplay is already the overhead-RTS C&C camera; the current web prototype's flat look is placeholder for fun-testing. (See `DECISIONS.md` → "Visual target: C&C".)
+
 **Clinical-sinister — elegant menace** (stylized, never photoreal). Played straight: you're *evolution*, indifferent — the unease and the thrill come from how satisfying it is to watch a calm, clean world destabilize.
 
 - **Signature image:** the disease's signature color creeping across a cold, clean world map — "the world falling," refined.

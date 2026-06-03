@@ -19,6 +19,24 @@ Each entry uses this template:
 
 ---
 
+## 2026-06-01 — Visual target: C&C — isometric (MVP) → real-time 3D (end state)
+
+**Context:** Clarified the final look. Gameplay is an overhead RTS — already the Command & Conquer camera. The current web/canvas prototype's flat shapes are placeholder (for cheaply testing fun); the open question was the *production look*.
+
+**Decision:** Target a **Command & Conquer** look, phased:
+- **MVP = classic isometric** (Red Alert / Tiberian Dawn) — detailed sprites at a fixed iso angle, **pre-rendered from 3D (Blender → sprites)**, run in a tractable **2D engine** (likely Godot 2D).
+- **End state = real-time 3D** (Generals / C&C 3) — live 3D models in a 3D engine.
+
+The current prototype stays flat/placeholder until the fun is proven; art is a production layer added after.
+
+**Why:** Iso-sprites are the achievable MVP look for a solo + Claude team (Blender as a model-once → render-to-sprites pipeline); real-time 3D is the higher-ceiling end state. Matches the prove-cheap-then-scale ethos. Doesn't change the gameplay (already overhead RTS) or the current fun-test.
+
+**Reversibility:** Easy — art direction / production look; independent of gameplay and the prototype.
+
+**Revisit if:** A 2D engine + iso sprites proves limiting, or we want to jump to real-time 3D earlier.
+
+---
+
 ## 2026-06-01 — RTS build model (auto-production) + two-tier immune system
 
 **Context:** The RTS combat slice played better than the directed-spread version ("already feels better"). Refining two things Brian raised: how you build units, and how the immune system is structured.
