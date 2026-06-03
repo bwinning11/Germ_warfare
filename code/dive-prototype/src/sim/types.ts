@@ -1,4 +1,4 @@
-export type ZoneKind = 'portal' | 'connective' | 'organ' | 'gland'
+export type ZoneKind = 'portal' | 'connective' | 'organ' | 'gland' | 'pickup'
 export type Owner = 'none' | 'you'
 export type ZoneId = string
 
