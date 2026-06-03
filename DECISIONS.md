@@ -19,6 +19,22 @@ Each entry uses this template:
 
 ---
 
+## 2026-06-01 — Pivot the dive to a real-time strategy (RTS) battle
+
+**Context:** The directed-spread dive was prototyped (v1 → v2 legibility fix → enriched network/territory model) and playtested by Brian. Even after the legibility fixes, the loop wasn't fun *for him* — the zone-spread abstraction didn't deliver the RTS feel he wanted from the start. He asked to build the actual RTS he originally imagined.
+
+**Decision:** The dive becomes a **real-time strategy battle**: inside a body, a **base** harvests and produces **units (your strains)** and **structures (colonies)** that you **command in real time** (select, move, attack) against the **immune system**, pushing toward **organs**. This **supersedes** the directed-spread hybrid + network/territory model (contours §4) for the dive's *interaction*. Everything around it carries over: germ-vs-immune, the body setting, harvest/biomass, strains/colonies, Heat/detection, organs-as-vectors, escape, the dual win, and the geoscape above it.
+
+First build: a tiny **RTS "combat slice"** — one arena, a small base, 3 unit types (Spreader / Brute / Spitter), real-time command vs. escalating immune waves, win by capturing/holding an organ — to answer the load-bearing question: *is commanding your germs fun?* Scale to a fuller base-builder only if it lands.
+
+**Why:** Player experience is the north star — a cheaper abstraction the designer doesn't enjoy is worthless, and the RTS is what Brian wanted. RTS is the biggest/riskiest build (units, pathing, AI, balance — the "scope cliff"), so we de-risk with a small combat-feel prototype before committing to the full thing.
+
+**Reversibility:** Hard — reverses the "directed-spread, RTS deferred" calls and is a much larger build. Mitigated by prototyping the combat slice first.
+
+**Revisit if:** The combat slice isn't fun or proves infeasible for a solo + Claude team (reconsider scale, or a lighter combat model).
+
+---
+
 ## 2026-06-01 — Dive enriched to a network/territory model (playtest-driven)
 
 **Context:** The v1 minimal dive prototype was playtested. After a fix pass made it legible and fair (v2), the deeper finding surfaced: the loop is **too thin** — one verb (expand), so Dormancy is a non-decision and the map is linear. Brian proposed defense and node-chaining, and asked how pickups/relics work in a dive.

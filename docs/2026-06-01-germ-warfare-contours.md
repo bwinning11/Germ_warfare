@@ -32,6 +32,8 @@ These never conflate — and they should *feel* different: **Heat** is urgent an
 
 ## 4. The Dive — the MVP core
 
+> **⚠ PIVOT (2026-06-01): the dive is now a real-time strategy (RTS) battle — you *command units* in real time, not direct-spread across a zone graph.** A directed-spread prototype (including the network/territory model below) was built and playtested; it didn't deliver the RTS feel, so we pivoted to the RTS Brian originally imagined: a base that harvests + builds units (strains) and structures (colonies), commanded in real time against the immune system, pushing toward organs. The directed-spread / network-model content below is **kept for history but superseded** for the dive's core interaction. First build: a small RTS "combat slice." See `DECISIONS.md` → "Pivot the dive to a real-time strategy battle."
+
 ### Form
 **Directed-spread hybrid.** You don't micro squads — you *are* the infection, guiding a growing front of infected cells. On top of that spread core sit:
 - **Strains** = semi-units (mobile, spend Biomass to spawn).
