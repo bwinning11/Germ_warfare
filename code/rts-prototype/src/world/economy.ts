@@ -3,7 +3,7 @@
 // DOM-free — fully testable in Vitest.
 // ---------------------------------------------------------------------------
 
-import { World, Entity } from './types';
+import { World, Entity, ProductionMix, GermKind } from './types';
 import { nextId } from './world';
 
 // ---------------------------------------------------------------------------
@@ -105,4 +105,127 @@ export function produce(
   world.entities.push(unit);
 
   return { success: true, unit };
+}
+
+// ---------------------------------------------------------------------------
+// Production mix — auto-builder
+// ---------------------------------------------------------------------------
+
+/**
+ * Update the world's production mix.
+ * Weights are relative — 0 disables that type, any positive value enables it.
+ */
+export function setMix(world: World, mix: ProductionMix): void {
+  world.productionMix = { ...mix };
+}
+
+/**
+ * The kinds in the order we consider them when picking the next unit to build.
+ */
+const GERM_KINDS: GermKind[] = ['spreader', 'brute', 'spitter'];
+
+/**
+ * Production rate: how many biomass/s of "build progress" the base accumulates.
+ *
+ * Rate-limiting works via world.buildAccumulator (persisted across ticks).
+ * Each tick adds (dt * BUILD_RATE) to the accumulator.  A unit is produced
+ * when the accumulator reaches the unit's cost AND biomass is on hand.
+ * This means expensive units (brute: 60) require ~1.5 s of accumulation at
+ * the default rate, so proportions converge correctly across many ticks.
+ */
+export const BUILD_RATE = 40; // biomass/s of build-progress accumulation
+
+/**
+ * Pick the next unit kind to produce given the current mix and the existing
+ * count of each type already produced in this auto-build session.
+ *
+ * Uses a deficit-based scheduler: produces the type that is most
+ * under-represented relative to its target fraction.
+ *
+ * Returns null when no type has a non-zero weight.
+ */
+export function pickNextKind(
+  mix: ProductionMix,
+  produced: Record<GermKind, number>,
+): GermKind | null {
+  const totalWeight = mix.spreader + mix.brute + mix.spitter;
+  if (totalWeight <= 0) return null;
+
+  const totalProduced = produced.spreader + produced.brute + produced.spitter;
+
+  let bestKind: GermKind | null = null;
+  let bestDeficit = -Infinity;
+
+  for (const kind of GERM_KINDS) {
+    const weight = mix[kind];
+    if (weight <= 0) continue;
+    const targetFrac = weight / totalWeight;
+    const actualFrac = totalProduced === 0 ? 0 : produced[kind] / totalProduced;
+    const deficit = targetFrac - actualFrac;
+    if (deficit > bestDeficit) {
+      bestDeficit = deficit;
+      bestKind = kind;
+    }
+  }
+
+  return bestKind;
+}
+
+/**
+ * Auto-build step — called once per sim tick.
+ *
+ * Accumulates build progress in world.buildAccumulator across ticks.  When
+ * accumulator >= next unit's cost AND biomass >= cost, the unit is produced
+ * and both the accumulator and biomass are debited.
+ *
+ * - Never overspends: only produces when both accumulator and biomass cover cost.
+ * - Naturally rate-limited by income when biomass is tight.
+ * - Proportions converge via deficit-based scheduling (pickNextKind).
+ *
+ * Mutates world (biomass, entities, buildAccumulator).
+ */
+export function autoBuildStep(world: World, dt: number): void {
+  const mix = world.productionMix;
+  if (mix.spreader + mix.brute + mix.spitter <= 0) return;
+
+  // Carry build progress across ticks
+  if (typeof world.buildAccumulator !== 'number') world.buildAccumulator = 0;
+  world.buildAccumulator += BUILD_RATE * dt;
+
+  // Cap accumulator so it doesn't stockpile indefinitely during pauses/biomass drought
+  const maxAccum = Math.max(UNIT_DEFS.spreader.cost, UNIT_DEFS.brute.cost, UNIT_DEFS.spitter.cost) * 3;
+  if (world.buildAccumulator > maxAccum) world.buildAccumulator = maxAccum;
+
+  // Track proportions produced within this call for the scheduler
+  const produced: Record<GermKind, number> = { spreader: 0, brute: 0, spitter: 0 };
+
+  // Produce units as long as accumulator covers costs
+  for (;;) {
+    const kind = pickNextKind(mix, produced);
+    if (!kind) break;
+
+    const cost = UNIT_DEFS[kind].cost;
+
+    // Accumulator must have enough progress to start this unit
+    if (world.buildAccumulator < cost) break;
+
+    // If we can't afford this specific kind from biomass, try a cheaper enabled kind
+    if (world.biomass < cost) {
+      // Find the cheapest affordable enabled kind
+      const fallback = GERM_KINDS
+        .filter((k) => mix[k] > 0 && world.biomass >= UNIT_DEFS[k].cost && world.buildAccumulator >= UNIT_DEFS[k].cost)
+        .sort((a, b) => UNIT_DEFS[a].cost - UNIT_DEFS[b].cost)[0] as GermKind | undefined;
+
+      if (!fallback) break; // nothing affordable — stop until biomass recovers
+
+      produce(world, fallback);
+      produced[fallback]++;
+      world.buildAccumulator -= UNIT_DEFS[fallback].cost;
+      continue;
+    }
+
+    produce(world, kind);
+    produced[kind]++;
+    world.buildAccumulator -= cost;
+  }
 }

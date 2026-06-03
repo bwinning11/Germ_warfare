@@ -56,6 +56,24 @@ export interface Entity {
 }
 
 /**
+ * The three producible unit kinds.  Used as a key in ProductionMix.
+ */
+export type GermKind = 'spreader' | 'brute' | 'spitter';
+
+/**
+ * Production mix — the relative weights the auto-builder uses to decide which
+ * unit type to produce next.  A weight of 0 means that type is disabled.
+ *
+ * Example: { spreader: 3, brute: 1, spitter: 2 } means the builder will target
+ * roughly 50 % spreaders, 17 % brutes, and 33 % spitters.
+ */
+export interface ProductionMix {
+  spreader: number;
+  brute: number;
+  spitter: number;
+}
+
+/**
  * The entire game world — one record passed through every simulation step.
  * The arena dimensions are stored here so the update function can use them
  * without touching the DOM.
@@ -84,4 +102,16 @@ export interface World {
   captureProgress: number;
   /** True when an immune unit is contesting the organ (capture stalled). */
   organContested: boolean;
+  /**
+   * Auto-production mix: relative weights for Spreader / Brute / Spitter.
+   * A weight of 0 disables that type.  The builder continuously spends biomass
+   * per this mix — the player sets it and lets the tide flow automatically.
+   */
+  productionMix: ProductionMix;
+  /**
+   * Accumulated build progress (biomass-equivalent units).
+   * Carries partial progress across ticks so expensive units complete correctly.
+   * Managed by autoBuildStep — do not set directly.
+   */
+  buildAccumulator: number;
 }

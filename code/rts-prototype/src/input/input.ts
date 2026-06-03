@@ -4,9 +4,9 @@
 // Pure logic lives in world/selection.ts; this file is the glue.
 // ---------------------------------------------------------------------------
 
-import { World, Entity, Vec2 } from '../world/types';
+import { World, Entity, Vec2, GermKind } from '../world/types';
 import { unitAtPoint, unitsInRect, Rect } from '../world/selection';
-import { produce } from '../world/economy';
+import { setMix } from '../world/economy';
 import { resetWorld } from '../world/world';
 import { overlayButtonRect } from '../render/render';
 
@@ -271,13 +271,15 @@ export function attachInput(
 }
 
 // ---------------------------------------------------------------------------
-// Keyboard handler: Space (pause), Q/W/E (production hotkeys)
+// Keyboard handler: Space (pause), Q/W/E (mix toggle), +/- (mix weight)
 // ---------------------------------------------------------------------------
 
 /**
  * Wire up keyboard shortcuts.
- * - Space: toggle pause
- * - Q / W / E: produce Spreader / Brute / Spitter (only when base is selected)
+ * - Space : toggle pause / begin from onboarding
+ * - R     : restart
+ * - Q / W / E : toggle Spreader / Brute / Spitter in the production mix
+ *               (cycles weight 0 → 1 → 2 → 3 → 0, or just on/off toggle)
  *
  * Call once after createInputState() and createWorld().
  */
@@ -303,21 +305,19 @@ export function attachKeyboard(world: World, state: InputState): void {
     // Everything below is live-play only
     if (world.gameState !== 'playing') return;
 
-    // Production hotkeys only fire when the base is selected
-    const baseSelected = world.entities.some(
-      (en) => en.kind === 'base' && state.selected.has(en.id),
-    );
-    if (!baseSelected) return;
-
-    const keyMap: Record<string, 'spreader' | 'brute' | 'spitter'> = {
+    // Mix hotkeys: Q/W/E cycle the weight of Spreader/Brute/Spitter
+    // Weight cycles: 0 → 1 → 2 → 3 → 0
+    const mixKeyMap: Record<string, GermKind> = {
       KeyQ: 'spreader',
       KeyW: 'brute',
       KeyE: 'spitter',
     };
-    const kind = keyMap[e.code];
-    if (kind) {
+    const mixKind = mixKeyMap[e.code];
+    if (mixKind) {
       e.preventDefault();
-      produce(world, kind);
+      const current = world.productionMix[mixKind];
+      const next = current >= 3 ? 0 : current + 1;
+      setMix(world, { ...world.productionMix, [mixKind]: next });
     }
   });
 }

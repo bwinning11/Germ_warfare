@@ -5,7 +5,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { createWorld } from '../world/world';
-import { produce, tickIncome, UNIT_DEFS } from '../world/economy';
+import { produce, tickIncome, UNIT_DEFS, setMix, autoBuildStep } from '../world/economy';
+import type { ProductionMix } from '../world/types';
 
 // ---------------------------------------------------------------------------
 // Unit definition sanity
@@ -129,5 +130,121 @@ describe('produce()', () => {
     expect(newUnit.hp).toBe(UNIT_DEFS.brute.hp);
     expect(newUnit.maxHp).toBe(UNIT_DEFS.brute.hp);
     expect(newUnit.data.speed).toBe(UNIT_DEFS.brute.speed);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// setMix()
+// ---------------------------------------------------------------------------
+describe('setMix()', () => {
+  it('updates world.productionMix weights', () => {
+    const world = createWorld(1100, 740);
+    const mix: ProductionMix = { spreader: 2, brute: 1, spitter: 0 };
+    setMix(world, mix);
+    expect(world.productionMix.spreader).toBe(2);
+    expect(world.productionMix.brute).toBe(1);
+    expect(world.productionMix.spitter).toBe(0);
+  });
+
+  it('allows setting all weights to zero (disables production)', () => {
+    const world = createWorld(1100, 740);
+    setMix(world, { spreader: 0, brute: 0, spitter: 0 });
+    expect(world.productionMix.spreader).toBe(0);
+    expect(world.productionMix.brute).toBe(0);
+    expect(world.productionMix.spitter).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// autoBuildStep()
+// ---------------------------------------------------------------------------
+describe('autoBuildStep()', () => {
+  it('spawns at least one unit when biomass is sufficient and mix is set', () => {
+    const world = createWorld(1100, 740);
+    world.productionMix = { spreader: 1, brute: 0, spitter: 0 };
+    world.biomass = 9999;
+    const before = world.entities.filter(e => e.owner === 'you' && e.kind !== 'base').length;
+
+    autoBuildStep(world, 1.0); // 1 second — plenty of time to build something
+
+    const after = world.entities.filter(e => e.owner === 'you' && e.kind !== 'base').length;
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it('never overspends — biomass does not go below zero', () => {
+    const world = createWorld(1100, 740);
+    world.productionMix = { spreader: 1, brute: 1, spitter: 1 };
+    world.biomass = UNIT_DEFS.spreader.cost - 1; // just under cheapest cost
+
+    autoBuildStep(world, 1.0);
+
+    expect(world.biomass).toBeGreaterThanOrEqual(0);
+  });
+
+  it('does not spawn any unit when biomass is below the cheapest enabled type', () => {
+    const world = createWorld(1100, 740);
+    world.productionMix = { spreader: 0, brute: 1, spitter: 0 }; // only brutes, cost 60
+    world.biomass = UNIT_DEFS.brute.cost - 1; // 59 — not enough
+
+    const before = world.entities.filter(e => e.owner === 'you' && e.kind !== 'base').length;
+    autoBuildStep(world, 1.0);
+    const after = world.entities.filter(e => e.owner === 'you' && e.kind !== 'base').length;
+
+    expect(after).toBe(before);
+  });
+
+  it('does nothing when all mix weights are zero', () => {
+    const world = createWorld(1100, 740);
+    world.productionMix = { spreader: 0, brute: 0, spitter: 0 };
+    world.biomass = 9999;
+
+    const before = world.entities.length;
+    autoBuildStep(world, 1.0);
+    expect(world.entities.length).toBe(before);
+  });
+
+  it('changing the mix changes what is produced', () => {
+    // Mix A: only spreaders
+    const worldA = createWorld(1100, 740);
+    worldA.productionMix = { spreader: 1, brute: 0, spitter: 0 };
+    worldA.biomass = 9999;
+    autoBuildStep(worldA, 5.0);
+    const spreaderCount = worldA.entities.filter(e => e.kind === 'spreader').length;
+    const bruteCountA = worldA.entities.filter(e => e.kind === 'brute').length;
+    expect(spreaderCount).toBeGreaterThan(0);
+    expect(bruteCountA).toBe(0);
+
+    // Mix B: only brutes
+    const worldB = createWorld(1100, 740);
+    worldB.productionMix = { spreader: 0, brute: 1, spitter: 0 };
+    worldB.biomass = 9999;
+    autoBuildStep(worldB, 5.0);
+    const spreaderCountB = worldB.entities.filter(e => e.kind === 'spreader').length;
+    // worldB starts with 6 spreader escorts from createWorld; new ones spawned would be brutes
+    const bruteCountB = worldB.entities.filter(e => e.kind === 'brute').length;
+    expect(bruteCountB).toBeGreaterThan(0);
+    expect(spreaderCountB).toBe(6); // only the starting escort, no new spreaders
+  });
+
+  it('produces units in roughly the set proportions over many steps', () => {
+    const world = createWorld(1100, 740);
+    // 2:1 spreader-to-spitter mix (no brutes)
+    world.productionMix = { spreader: 2, brute: 0, spitter: 1 };
+    world.biomass = 100_000;
+
+    // Run many steps of 1 s each
+    for (let i = 0; i < 60; i++) {
+      autoBuildStep(world, 1.0);
+    }
+
+    const spreaders = world.entities.filter(e => e.kind === 'spreader').length - 6; // subtract starting escort
+    const spitters  = world.entities.filter(e => e.kind === 'spitter').length;
+    const total = spreaders + spitters;
+
+    expect(total).toBeGreaterThan(0);
+    const spreaderFrac = spreaders / total;
+    // With 2:1 weight, spreaders should be roughly 66 % — allow ±15 %
+    expect(spreaderFrac).toBeGreaterThan(0.50);
+    expect(spreaderFrac).toBeLessThan(0.82);
   });
 });

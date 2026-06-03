@@ -511,7 +511,7 @@ function drawRallyPoint(
   ctx.restore();
 }
 
-/** Draw the production panel (bottom-left) when the base is selected. */
+/** Draw the production-mix panel (bottom-left) when the base is selected. */
 function drawProductionPanel(
   ctx: CanvasRenderingContext2D,
   world: World,
@@ -523,12 +523,12 @@ function drawProductionPanel(
   if (!baseSelected) return;
 
   const panelX = 10;
-  const panelY = world.height - 110;
-  const panelW = 310;
-  const panelH = 96;
+  const panelY = world.height - 122;
+  const panelW = 316;
+  const panelH = 108;
 
   // Panel background
-  ctx.fillStyle = 'rgba(10, 8, 20, 0.82)';
+  ctx.fillStyle = 'rgba(10, 8, 20, 0.88)';
   ctx.strokeStyle = '#8866ff';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
@@ -536,11 +536,16 @@ function drawProductionPanel(
   ctx.fill();
   ctx.stroke();
 
+  // Title row
   ctx.fillStyle = '#ccaaff';
   ctx.font = 'bold 11px monospace';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.fillText('PRODUCTION  (base selected)', panelX + 10, panelY + 8);
+  ctx.fillText('PRODUCTION MIX  (base selected)', panelX + 10, panelY + 7);
+
+  ctx.fillStyle = '#7755bb';
+  ctx.font = '9px monospace';
+  ctx.fillText('Q/W/E to set weight (0–3)  ·  auto-builds continuously', panelX + 10, panelY + 21);
 
   const units: Array<{ key: string; label: string; kind: 'spreader' | 'brute' | 'spitter'; color: string }> = [
     { key: 'Q', label: 'Spreader', kind: 'spreader', color: ENTITY_COLORS.spreader },
@@ -548,45 +553,67 @@ function drawProductionPanel(
     { key: 'E', label: 'Spitter',  kind: 'spitter',  color: ENTITY_COLORS.spitter  },
   ];
 
-  units.forEach((u, i) => {
-    const bx = panelX + 10 + i * 100;
-    const by = panelY + 28;
-    const bw = 90;
-    const bh = 56;
-    const def = UNIT_DEFS[u.kind];
-    const canAfford = world.biomass >= def.cost;
+  const totalWeight = world.productionMix.spreader + world.productionMix.brute + world.productionMix.spitter;
 
-    // Button background
-    ctx.fillStyle = canAfford ? 'rgba(40,30,60,0.9)' : 'rgba(20,15,30,0.9)';
-    ctx.strokeStyle = canAfford ? u.color : '#444';
-    ctx.lineWidth = 1.5;
+  units.forEach((u, i) => {
+    const bx = panelX + 8 + i * 100;
+    const by = panelY + 35;
+    const bw = 92;
+    const bh = 68;
+    const def = UNIT_DEFS[u.kind];
+    const weight = world.productionMix[u.kind];
+    const isEnabled = weight > 0;
+    const targetPct = totalWeight > 0 ? Math.round((weight / totalWeight) * 100) : 0;
+
+    // Button background — brighter when weight > 0
+    ctx.fillStyle = isEnabled ? 'rgba(40,30,70,0.95)' : 'rgba(14,10,22,0.9)';
+    ctx.strokeStyle = isEnabled ? u.color : '#3a2a4a';
+    ctx.lineWidth = isEnabled ? 2 : 1;
     ctx.beginPath();
-    ctx.roundRect(bx, by, bw, bh, 4);
+    ctx.roundRect(bx, by, bw, bh, 5);
     ctx.fill();
     ctx.stroke();
 
     // Hotkey badge
-    ctx.fillStyle = canAfford ? u.color : '#666';
-    ctx.font = 'bold 13px monospace';
+    ctx.fillStyle = isEnabled ? u.color : '#554466';
+    ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText(`[${u.key}]`, bx + 6, by + 6);
+    ctx.fillText(`[${u.key}]`, bx + 5, by + 5);
 
     // Unit name
-    ctx.fillStyle = canAfford ? '#ffffff' : '#666';
+    ctx.fillStyle = isEnabled ? '#ffffff' : '#554466';
     ctx.font = '10px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText(u.label, bx + 6, by + 24);
+    ctx.fillText(u.label, bx + 5, by + 21);
 
-    // Stats line
-    ctx.fillStyle = canAfford ? '#aaaaaa' : '#555';
+    // Cost / HP hint
+    ctx.fillStyle = isEnabled ? '#888' : '#443355';
     ctx.font = '9px monospace';
-    ctx.fillText(`HP:${def.hp} SPD:${def.speed}`, bx + 6, by + 36);
+    ctx.fillText(`${def.cost}bio  HP:${def.hp}`, bx + 5, by + 33);
 
-    // Cost
-    ctx.fillStyle = canAfford ? '#88ff88' : '#ff6666';
+    // Weight pips (filled circles = weight, empty = remaining slots up to 3)
+    const pipY = by + 47;
+    for (let p = 0; p < 3; p++) {
+      const px = bx + 5 + p * 13;
+      ctx.beginPath();
+      ctx.arc(px + 4, pipY + 4, 4, 0, Math.PI * 2);
+      if (p < weight) {
+        ctx.fillStyle = u.color;
+        ctx.fill();
+      } else {
+        ctx.strokeStyle = '#443355';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+
+    // Target percentage label
+    ctx.fillStyle = isEnabled ? '#aaffaa' : '#443355';
     ctx.font = 'bold 10px monospace';
-    ctx.fillText(`${def.cost} BIO`, bx + 6, by + 48);
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText(isEnabled ? `${targetPct}%` : 'OFF', bx + bw - 5, by + 44);
+    ctx.textAlign = 'left';
   });
 }
 
@@ -706,10 +733,10 @@ function drawOnboarding(ctx: CanvasRenderingContext2D, width: number, height: nu
   // Core loop — the headline
   const loop: string[] = [
     'THE LOOP:',
-    '1.  BUILD germs from your BASE  —  press  Q / W / E  (Spreader / Brute / Spitter)',
-    '2.  COMMAND them  —  click to select · drag a box to select many · right-click to move/attack',
-    '3.  DEFEND your base from the immune WAVES (they get bigger over time)',
-    '4.  PUSH across the map and HOLD the ORGAN to capture it',
+    '1.  SET your production mix  —  click BASE, then press  Q / W / E  to weight each germ type',
+    '2.  The base AUTO-BUILDS a continuous tide — you command, not click-spam',
+    '3.  COMMAND your swarm  —  click/drag to select · right-click to move or attack',
+    '4.  DEFEND base from immune WAVES  ·  PUSH to the ORGAN and HOLD it to win',
   ];
   ctx.font = '15px monospace';
   let y = height * 0.30;
@@ -855,6 +882,29 @@ function drawHUD(
   ctx.fillText(`GERMS  ${unitCount}`, x + 55, top + h / 2);
   x += 110 + 8;
 
+  // --- Production mix indicator ---
+  {
+    const mix = world.productionMix;
+    const total = mix.spreader + mix.brute + mix.spitter;
+    const mixLabel = total === 0
+      ? 'MIX: OFF'
+      : `MIX S${mix.spreader} B${mix.brute} P${mix.spitter}`;
+    const mixActive = total > 0;
+    ctx.fillStyle = 'rgba(10, 8, 20, 0.78)';
+    ctx.strokeStyle = mixActive ? '#8866ff' : '#553355';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(x, top, 122, h, 3);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = mixActive ? '#ccaaff' : '#554466';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(mixLabel, x + 61, top + h / 2);
+    x += 122 + 8;
+  }
+
   // --- Wave + next-wave timer ---
   const nextWaveIn = Math.max(0, WAVE_INTERVAL - ws.timer);
   const waveLabel = ws.waveNumber === 0
@@ -907,7 +957,7 @@ function drawWaveFlash(
 function drawLegend(ctx: CanvasRenderingContext2D, world: World): void {
   const rows: Array<{ color: string; text: string }> = [
     { color: ENTITY_COLORS.base,       text: 'BASE — your home (defend it!)' },
-    { color: ENTITY_COLORS.spreader,   text: 'YOUR GERMS (Q/W/E)' },
+    { color: ENTITY_COLORS.spreader,   text: 'YOUR GERMS (auto-produced)' },
     { color: ENTITY_COLORS.macrophage, text: 'IMMUNE (waves attack you)' },
     { color: ENTITY_COLORS.organ,      text: 'ORGAN — hold it to WIN' },
   ];
@@ -954,7 +1004,7 @@ function drawLegend(ctx: CanvasRenderingContext2D, world: World): void {
   ctx.font = 'bold 11px monospace';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'bottom';
-  ctx.fillText('GOAL: build germs, defend base, take the ORGAN →',
+  ctx.fillText('GOAL: set mix, tide builds itself, take the ORGAN →',
     world.width - 8, by - 6);
   ctx.restore();
 }

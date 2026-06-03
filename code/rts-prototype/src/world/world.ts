@@ -3,8 +3,8 @@
 // DOM-free. Safe to import in Vitest without a browser environment.
 // ---------------------------------------------------------------------------
 
-import { World, Entity, Vec2 } from './types';
-import { tickIncome } from './economy';
+import { World, Entity, Vec2, ProductionMix } from './types';
+import { tickIncome, autoBuildStep } from './economy';
 import { tickCombat, removeDeadEntities, updateEffects } from './combat';
 import { createWaveState, tickWaves, tickImmunAI, WaveState } from './waves';
 import { makeOrgan, tickCapture } from './capture';
@@ -108,6 +108,9 @@ export function createWorld(width: number, height: number): World {
   // Reset wave state for a fresh game
   waveState = createWaveState();
 
+  // Default mix: all three types equally weighted (the player can adjust)
+  const productionMix: ProductionMix = { spreader: 1, brute: 1, spitter: 1 };
+
   return {
     entities: [base, organ, ...units],
     width,
@@ -121,6 +124,8 @@ export function createWorld(width: number, height: number): World {
     gameState: 'onboarding',
     captureProgress: 0,
     organContested: false,
+    productionMix,
+    buildAccumulator: 0,
   };
 }
 
@@ -138,6 +143,8 @@ export function resetWorld(world: World): void {
   world.gameState = fresh.gameState;
   world.captureProgress = fresh.captureProgress;
   world.organContested = fresh.organContested;
+  world.productionMix = fresh.productionMix;
+  world.buildAccumulator = fresh.buildAccumulator;
 }
 
 // ---------------------------------------------------------------------------
@@ -160,6 +167,9 @@ export function update(world: World, dt: number): World {
 
   // Passive biomass trickle
   tickIncome(world, dt);
+
+  // Auto-production: spend biomass on units per the current mix
+  autoBuildStep(world, dt);
 
   const units = world.entities;
 

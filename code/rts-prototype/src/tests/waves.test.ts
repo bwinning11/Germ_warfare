@@ -36,6 +36,8 @@ function makeWorld(entities: Entity[], elapsed = 0): World {
     gameState: 'playing',
     captureProgress: 0,
     organContested: false,
+    productionMix: { spreader: 1, brute: 1, spitter: 1 },
+    buildAccumulator: 0,
   };
 }
 
