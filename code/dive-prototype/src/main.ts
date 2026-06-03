@@ -76,7 +76,11 @@ function bannerFor(order: Order): LastAction {
     case 'escape':
       return { kind: 'escape', label: `ESCAPING via ${ZONE_LABEL[order.portal] ?? order.portal}`, targetZone: order.portal }
     case 'dormancy':
-      return { kind: 'dormancy', label: 'GOING DORMANT — Heat cooling' }
+      return { kind: 'dormancy', label: `DORMANCY TOGGLE — ${order.zoneId}` }
+    case 'deployBrute':
+      return { kind: 'dormancy', label: `BRUTE DEPLOYED → ${order.zoneId}` }
+    case 'buildCyst':
+      return { kind: 'dormancy', label: `CYST BUILT → ${order.zoneId}` }
   }
 }
 

@@ -3,11 +3,15 @@ import { income } from './economy'
 import { applyColonize, COLONIZE_TICKS } from './spread'
 import { applyBreach } from './breach'
 import { updateHeat, heatStage } from './heat'
-import { applyImmune } from './immune'
-import type { GameState, Order } from './types'
+import { applyImmune, BRUTE_COST, CYST_COST } from './immune'
+import { toggleDormant } from './network'
+import { spend } from './economy'
+import type { GameState, Order, ZoneId } from './types'
 
 // Re-export so tests can import COLONIZE_TICKS from './dive'
 export { COLONIZE_TICKS }
+// Re-export defense constants so callers can see costs from './dive'
+export { BRUTE_COST, CYST_COST }
 
 // ─── Virality constants (tunable) ─────────────────────────────────────────────
 
@@ -44,30 +48,65 @@ export function initialState(): GameState {
     colonizeProgress: {},
     breachProgress: {},
     heat: 0,
-    dormant: false,
+    dormant: new Set<ZoneId>(),
     responders: [],
     result: 'ongoing',
     banked: 0,
+    brutes: new Set<ZoneId>(),
+    cysts: new Set<ZoneId>(),
   }
+}
+
+/**
+ * Pure helper: deploy a Brute to an owned zone.
+ * Spends BRUTE_COST biomass. Returns null if insufficient biomass or zone
+ * is not owned by 'you'. Already-bruteified zones are treated as valid (idempotent spend).
+ */
+export function deployBrute(state: GameState, zoneId: ZoneId): GameState | null {
+  const zone = state.map.zones.find(z => z.id === zoneId)
+  if (!zone || zone.owner !== 'you') return null
+  const after = spend(state, BRUTE_COST)
+  if (!after) return null
+  const newBrutes = new Set(after.brutes)
+  newBrutes.add(zoneId)
+  return { ...after, brutes: newBrutes }
+}
+
+/**
+ * Pure helper: build a Cyst on an owned zone.
+ * Spends CYST_COST biomass. Returns null if insufficient biomass or zone
+ * is not owned by 'you'.
+ */
+export function buildCyst(state: GameState, zoneId: ZoneId): GameState | null {
+  const zone = state.map.zones.find(z => z.id === zoneId)
+  if (!zone || zone.owner !== 'you') return null
+  const after = spend(state, CYST_COST)
+  if (!after) return null
+  const newCysts = new Set(after.cysts)
+  newCysts.add(zoneId)
+  return { ...after, cysts: newCysts }
 }
 
 /**
  * Advances the simulation by one tick. Pure — never mutates state.
  *
  * Order of operations each tick:
- *   1. Apply dormancy order (toggle dormant flag) if present.
- *   2. Apply colonize orders — skipped if dormant.
- *   3. Update heat: rises (owned zones + colonize activity) or decays (dormant).
- *      Heat bump from zone losses (step 4) is folded in here.
- *   4. Compute heat stage; spawn/act responders if alerted+.
- *      Zone losses from responders contribute a heat bump (applied retroactively to heat).
- *   5. Add biomass income (+1 per you-owned zone after all changes).
+ *   1. Apply escape order (checked first — instant resolution).
+ *   2. Apply dormancy orders (per-node toggle).
+ *   3. Apply deployBrute / buildCyst orders (spend biomass, place defense).
+ *   4. Apply colonize and breach orders.
+ *   5. Compute heat stage (from previous tick's heat); spawn/act responders.
+ *      Responders deprioritize dormant nodes; damage is reduced by Brute/Cyst.
+ *      Zone losses from responders contribute a heat bump.
+ *   6. Update heat: rises from HOT owned zones; decays naturally when none are hot.
+ *   7. Add biomass income (only from HOT connected zones after all changes).
+ *   8. Check for overwhelming heat → caught.
  */
 export function step(state: GameState, orders: Order[]): GameState {
   // Guard: terminal states do not advance.
   if (state.result !== 'ongoing') return state
 
-  // Check for a valid escape order: named portal must be kind:'portal' AND owner:'you'
+  // 1. Check for a valid escape order: named portal must be kind:'portal' AND owner:'you'
   const escapeOrder = orders.find(o => o.type === 'escape') as Extract<Order, { type: 'escape' }> | undefined
   if (escapeOrder) {
     const portal = state.map.zones.find(z => z.id === escapeOrder.portal)
@@ -82,49 +121,63 @@ export function step(state: GameState, orders: Order[]): GameState {
     // Invalid escape order — fall through to normal tick processing
   }
 
-  // 1. Handle dormancy toggle
-  const hasDormancyOrder = orders.some(o => o.type === 'dormancy')
-  const dormant = hasDormancyOrder ? !state.dormant : state.dormant
+  // 2. Handle per-node dormancy toggle orders
+  const dormancyOrders = orders.filter(o => o.type === 'dormancy') as Extract<Order, { type: 'dormancy' }>[]
+  let stateAfterDormancy: GameState = state
+  for (const o of dormancyOrders) {
+    stateAfterDormancy = toggleDormant(stateAfterDormancy, o.zoneId)
+  }
 
-  // 2. Apply colonize and breach orders (both skipped while dormant)
+  // 3. Handle defense deployment orders (spend biomass; place Brute/Cyst)
+  const bruteOrders = orders.filter(o => o.type === 'deployBrute') as Extract<Order, { type: 'deployBrute' }>[]
+  const cystOrders  = orders.filter(o => o.type === 'buildCyst')  as Extract<Order, { type: 'buildCyst' }>[]
+
+  let stateAfterDefense: GameState = stateAfterDormancy
+  for (const o of bruteOrders) {
+    const result = deployBrute(stateAfterDefense, o.zoneId)
+    if (result) stateAfterDefense = result
+  }
+  for (const o of cystOrders) {
+    const result = buildCyst(stateAfterDefense, o.zoneId)
+    if (result) stateAfterDefense = result
+  }
+
+  // 4. Apply colonize and breach orders
   const colonizeOrders = orders.filter(o => o.type === 'colonize') as Extract<Order, { type: 'colonize' }>[]
-  const breachOrders = orders.filter(o => o.type === 'breach') as Extract<Order, { type: 'breach' }>[]
+  const breachOrders   = orders.filter(o => o.type === 'breach')   as Extract<Order, { type: 'breach' }>[]
 
-  const stateWithDormancy = { ...state, dormant }
-
-  const afterColonize = dormant
-    ? stateWithDormancy
-    : applyColonize(stateWithDormancy, colonizeOrders)
-
-  const afterBreach = dormant
-    ? afterColonize
-    : applyBreach(afterColonize, breachOrders)
+  const afterColonize = applyColonize(stateAfterDefense, colonizeOrders)
+  const afterBreach   = applyBreach(afterColonize, breachOrders)
 
   // Track whether colonizing was actively happening (for heat rise bonus)
-  const isColonizing = !dormant && colonizeOrders.length > 0 && colonizeOrders.some(o => {
-    // Check if the order was valid (i.e. progress actually moved)
+  const isColonizing = colonizeOrders.length > 0 && colonizeOrders.some(o => {
     const before = state.colonizeProgress[o.target] ?? 0
-    const after = afterColonize.colonizeProgress[o.target] ?? 0
-    // If after > before, progress moved; or if after < before, zone was captured
+    const after  = afterColonize.colonizeProgress[o.target] ?? 0
     return after !== before || afterColonize.map.zones.find(z => z.id === o.target)?.owner === 'you'
   })
 
-  const ownedCount = afterBreach.map.zones.filter(z => z.owner === 'you').length
+  // Count HOT owned zones (dormant nodes excluded) — used for heat calculation
+  const hotCount = afterBreach.map.zones.filter(
+    z => z.owner === 'you' && !afterBreach.dormant.has(z.id),
+  ).length
 
-  // 3. Compute stage BEFORE immune (to determine if responders act this tick)
+  // 5. Compute stage BEFORE immune (to determine if responders act this tick)
   const stage = heatStage(state.heat)
 
-  // 4. Apply immune (responders act; accumulate zone-loss heat bump)
+  // 5b. Apply immune (responders deprioritize dormant; Brute/Cyst reduce damage)
   const { zones: afterImmune, responders, heatBump } = applyImmune(
     afterBreach.map.zones,
     afterBreach.responders ?? state.responders,
     stage,
+    afterBreach.dormant,
+    afterBreach.brutes,
+    afterBreach.cysts,
   )
 
-  // 5. Update heat (incorporates zone-loss bump from this tick)
-  const newHeat = updateHeat(state.heat, ownedCount, dormant, isColonizing, heatBump)
+  // 6. Update heat (incorporates zone-loss bump from this tick)
+  const newHeat = updateHeat(state.heat, hotCount, isColonizing, heatBump)
 
-  // 6. Biomass income (based on zones after all changes)
+  // 7. Biomass income (based on HOT connected zones after all changes)
   const afterImmuneState: GameState = {
     ...afterBreach,
     map: { ...afterBreach.map, zones: afterImmune },
@@ -132,7 +185,7 @@ export function step(state: GameState, orders: Order[]): GameState {
   }
   const gained = income(afterImmuneState)
 
-  // 7. Check if heat has hit overwhelming → caught
+  // 8. Check if heat has hit overwhelming → caught
   if (heatStage(newHeat) === 'overwhelming') {
     return {
       ...afterImmuneState,

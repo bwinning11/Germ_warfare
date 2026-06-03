@@ -105,7 +105,7 @@ describe('result / escape / caught', () => {
     const s0 = { ...stateOwningPortal(), heat: 89 }
     const terminal = step(s0, [])
     expect(terminal.result).toBe('caught')
-    const again = step(terminal, [{ type: 'dormancy' }])
+    const again = step(terminal, [{ type: 'dormancy', zoneId: 'entry' }])
     expect(again).toEqual(terminal)
   })
 

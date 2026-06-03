@@ -47,34 +47,36 @@ describe('heat — rises with owned-zone count', () => {
   })
 })
 
-describe('dormancy', () => {
-  it('dormancy order toggles dormant to true', () => {
+describe('dormancy (per-node)', () => {
+  it('dormancy order on entry adds entry to dormant set', () => {
     const s0 = initialState()
-    expect(s0.dormant).toBe(false)
-    const s1 = step(s0, [{ type: 'dormancy' }])
-    expect(s1.dormant).toBe(true)
+    expect(s0.dormant.has('entry')).toBe(false)
+    const s1 = step(s0, [{ type: 'dormancy', zoneId: 'entry' }])
+    expect(s1.dormant.has('entry')).toBe(true)
   })
 
-  it('dormancy order again toggles dormant back to false', () => {
+  it('dormancy order on entry again removes entry from dormant set (toggle)', () => {
     const s0 = initialState()
-    const s1 = step(s0, [{ type: 'dormancy' }])
-    const s2 = step(s1, [{ type: 'dormancy' }])
-    expect(s2.dormant).toBe(false)
+    const s1 = step(s0, [{ type: 'dormancy', zoneId: 'entry' }])
+    const s2 = step(s1, [{ type: 'dormancy', zoneId: 'entry' }])
+    expect(s2.dormant.has('entry')).toBe(false)
   })
 
-  it('while dormant, heat decays instead of rising', () => {
-    const s0: GameState = { ...initialState(), heat: 50, dormant: true }
+  it('dorming all owned nodes causes heat to decay instead of rising', () => {
+    // Put entry (the only owned node) dormant, then step — heat should drop
+    const s0: GameState = { ...initialState(), heat: 50, dormant: new Set(['entry']) }
     const s1 = step(s0, [])
     expect(s1.heat).toBeLessThan(s0.heat)
   })
 
-  it('while dormant, colonize progress does NOT advance', () => {
-    const s0: GameState = { ...initialState(), dormant: true }
+  it('dormant node does not block colonize (colonize is always active; only income/heat differ)', () => {
+    // Per-node dormancy does not prevent colonize — colonize targets adjacent zones, not self
+    const s0 = initialState()
     const s1 = step(s0, [{ type: 'colonize', target: 'vessel_a' }])
-    expect(s1.colonizeProgress['vessel_a']).toBeUndefined()
+    expect(s1.colonizeProgress['vessel_a']).toBeGreaterThan(0)
   })
 
-  it('while NOT dormant, colonize progress DOES advance', () => {
+  it('while all nodes hot, colonize progress DOES advance', () => {
     const s0 = initialState()
     const s1 = step(s0, [{ type: 'colonize', target: 'vessel_a' }])
     expect(s1.colonizeProgress['vessel_a']).toBeGreaterThan(0)

@@ -26,7 +26,8 @@ export function connectedMultiplier(n: number): number {
  *   - open (barrier === false), AND
  *   - connect two zones both owned by 'you'
  *
- * Returns the Set of zone ids reachable under those constraints.
+ * Returns the Set of ALL zone ids reachable under those constraints (hot or dormant).
+ * Dormant nodes still conduct connectivity — they just don't count toward income/multiplier.
  * If 'entry' is not owned by 'you', returns an empty Set.
  */
 export function coreConnected(state: GameState): Set<ZoneId> {
@@ -66,4 +67,37 @@ export function coreConnected(state: GameState): Set<ZoneId> {
   }
 
   return visited
+}
+
+/**
+ * Returns the subset of coreConnected zones that are HOT (not dormant).
+ * This is the set used to compute the income multiplier: dormant nodes conduct
+ * connectivity but do NOT count toward the multiplier or generate income.
+ */
+export function hotConnected(state: GameState): Set<ZoneId> {
+  const cc = coreConnected(state)
+  const dormant = state.dormant
+  const hot = new Set<ZoneId>()
+  for (const id of cc) {
+    if (!dormant.has(id)) hot.add(id)
+  }
+  return hot
+}
+
+/**
+ * Pure helper: toggle a node's dormancy state.
+ * If the node is currently hot, makes it dormant (and vice versa).
+ * Only valid for you-owned zones — returns state unchanged if zone is not owned.
+ */
+export function toggleDormant(state: GameState, zoneId: ZoneId): GameState {
+  const zone = state.map.zones.find(z => z.id === zoneId)
+  if (!zone || zone.owner !== 'you') return state
+
+  const newDormant = new Set(state.dormant)
+  if (newDormant.has(zoneId)) {
+    newDormant.delete(zoneId)
+  } else {
+    newDormant.add(zoneId)
+  }
+  return { ...state, dormant: newDormant }
 }

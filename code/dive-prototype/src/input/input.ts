@@ -153,7 +153,10 @@ export type KeyAction =
 export function keyToAction(code: string): KeyAction {
   switch (code) {
     case 'KeyD':
-      return { kind: 'order', order: { type: 'dormancy' } }
+      // TODO(input-wiring): per-node dormancy requires a zoneId; input task will
+      // replace this with a zone-picker or selected-zone cursor. 'entry' is a
+      // temporary placeholder so the type is satisfied.
+      return { kind: 'order', order: { type: 'dormancy', zoneId: 'entry' } }
     case 'Space':
       return { kind: 'pause' }
     default:

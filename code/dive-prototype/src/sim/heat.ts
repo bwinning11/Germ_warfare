@@ -21,17 +21,24 @@ export const HEAT_THRESHOLD_OVERWHELMING = 90
 // Tuned for a *first* dive to be survivable while the player is still learning.
 // With the loop at ~800ms/tick, a lone foothold rises 1/tick (~1.25/sec), so the
 // player has well over ten seconds of reading the bar before 'alerted' (20) and
-// plenty of runway to react before 'active' (50). Dormancy decays faster than a
-// small hold rises, so going Dormant always visibly pulls Heat back down.
+// plenty of runway to react before 'active' (50).
+//
+// Heat now rises only from HOT (non-dormant) owned zones. Fully dorming all nodes
+// gives zero rise; the natural slow decay then visibly pulls the bar back down.
+// There is no longer a global dormant-vs-active binary — each node contributes
+// independently.
 
-/** Heat added per tick per you-owned zone (base pressure). */
+/** Heat added per tick per HOT (non-dormant) you-owned zone (base pressure). */
 export const HEAT_RISE_PER_OWNED_ZONE = 1
 
 /** Extra heat added per tick when at least one colonize order is active. */
 export const HEAT_RISE_ACTIVE_COLONIZE = 2
 
-/** Heat removed per tick while dormant (replaces rise). */
-export const HEAT_DECAY_DORMANT = 5
+/**
+ * Natural heat decay per tick when no owned zones are hot (or always applied
+ * as a floor drag). A small passive bleed so Heat never freezes.
+ */
+export const HEAT_NATURAL_DECAY = 1
 
 // ─── Stage classifier ────────────────────────────────────────────────────────
 
@@ -52,31 +59,29 @@ export function heatStage(heat: number): HeatStage {
 /**
  * Computes the new heat value for one tick.
  *
- * While dormant: heat decays by HEAT_DECAY_DORMANT (floored at 0).
- * While active:  heat rises by HEAT_RISE_PER_OWNED_ZONE × ownedCount
- *                plus HEAT_RISE_ACTIVE_COLONIZE if colonizing is happening.
+ * Heat rises from HOT owned zones only. Dormant nodes contribute 0 rise.
+ * When hotCount === 0 and no heatBump, heat naturally decays by HEAT_NATURAL_DECAY.
  *
  * @param currentHeat  heat at the start of this tick
- * @param ownedCount   number of zones owned by 'you' at the start of this tick
- * @param dormant      whether the player is in dormancy mode
+ * @param hotCount     number of HOT (non-dormant) zones owned by 'you' this tick
  * @param isColonizing whether at least one valid colonize order was applied this tick
  * @param heatBump     extra heat to add this tick (e.g. from zone losses)
  */
 export function updateHeat(
   currentHeat: number,
-  ownedCount: number,
-  dormant: boolean,
+  hotCount: number,
   isColonizing: boolean,
   heatBump: number,
 ): number {
-  if (dormant) {
-    return Math.max(0, currentHeat - HEAT_DECAY_DORMANT)
-  }
-
   const rise =
-    ownedCount * HEAT_RISE_PER_OWNED_ZONE +
+    hotCount * HEAT_RISE_PER_OWNED_ZONE +
     (isColonizing ? HEAT_RISE_ACTIVE_COLONIZE : 0) +
     heatBump
+
+  if (rise <= 0 && heatBump === 0) {
+    // No hot zones contributing — apply natural decay
+    return Math.max(0, currentHeat - HEAT_NATURAL_DECAY + rise)
+  }
 
   return Math.max(0, currentHeat + rise)
 }

@@ -45,16 +45,30 @@ export interface GameState {
   colonizeProgress: Record<ZoneId, number>
   /** In-progress breach operations: zone id → ticks invested so far */
   breachProgress: Record<ZoneId, number>
-  /** Body-wide alarm level. Rises with owned-zone count; decays while dormant. */
+  /** Body-wide alarm level. Rises with hot owned zones; decays naturally when little is hot. */
   heat: number
-  /** Whether the player is hiding (no colonize progress; heat decays). */
-  dormant: boolean
+  /**
+   * Per-node dormancy: set of owned zone ids currently in dormant mode.
+   * Dormant nodes produce no income, add no Heat, and immune responders deprioritize them.
+   * They still conduct network connectivity (so dorming a node never severs the graph).
+   */
+  dormant: Set<ZoneId>
   /** Active innate immune responders (one per targeted zone). */
   responders: Responder[]
   /** Current outcome of the dive. Once not 'ongoing', no further ticks advance. */
   result: DiveResult
   /** Virality points banked when the dive ends. 0 while ongoing; 0 on caught. */
   banked: number
+  /**
+   * Brutes deployed to owned nodes. A Brute reduces responder damage taken per tick
+   * in its zone, letting the player hold chokepoints under immune pressure.
+   */
+  brutes: Set<ZoneId>
+  /**
+   * Cysts built on owned nodes. A Cyst fortifies a zone, significantly reducing
+   * responder damage taken per tick (more durable than a Brute, but more expensive).
+   */
+  cysts: Set<ZoneId>
 }
 
 /** Colonize order: direct your infection toward an adjacent non-barrier zone. */
@@ -64,11 +78,13 @@ export interface ColonizeOrder {
 }
 
 /**
- * Dormancy order: toggle stealth mode. While dormant, colonize halts and heat decays.
- * Issue again to resume active spread.
+ * Dormancy order: toggle a specific zone between hot and dormant.
+ * Dormant nodes produce no income and no Heat; hot is the default.
+ * Omitting zoneId is deprecated — use a zoneId to target a specific node.
  */
 export interface DormancyOrder {
   type: 'dormancy'
+  zoneId: ZoneId
 }
 
 /**
@@ -93,6 +109,24 @@ export interface EscapeOrder {
 }
 
 /**
+ * DeployBrute order: spend biomass to place a Brute on an owned zone.
+ * The Brute reduces responder damage in that zone each tick.
+ */
+export interface DeployBruteOrder {
+  type: 'deployBrute'
+  zoneId: ZoneId
+}
+
+/**
+ * BuildCyst order: spend biomass to build a Cyst on an owned zone.
+ * The Cyst further reduces responder damage (stronger than a Brute; slower immune clearance).
+ */
+export interface BuildCystOrder {
+  type: 'buildCyst'
+  zoneId: ZoneId
+}
+
+/**
  * A player or AI instruction applied at the start of each tick.
  */
-export type Order = ColonizeOrder | DormancyOrder | BreachOrder | EscapeOrder
+export type Order = ColonizeOrder | DormancyOrder | BreachOrder | EscapeOrder | DeployBruteOrder | BuildCystOrder

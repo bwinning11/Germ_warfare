@@ -117,17 +117,17 @@ describe('colonize toward gland — blocked before breach, allowed after', () =>
   })
 })
 
-describe('breach halts while dormant', () => {
-  it('breach progress does not advance while dormant', () => {
+describe('breach — not blocked by per-node dormancy', () => {
+  it('breach progress advances even when vessel_b is dormant (dormancy is income/heat-only)', () => {
     const s = stateWithVesselBOwned()
-    // Toggle dormancy on
-    const dormantState = step(s, [{ type: 'dormancy' }])
-    expect(dormantState.dormant).toBe(true)
+    // Dorm vessel_b — under per-node dormancy, breach is NOT blocked
+    const dormantVesselB = step(s, [{ type: 'dormancy', zoneId: 'vessel_b' }])
+    expect(dormantVesselB.dormant.has('vessel_b')).toBe(true)
 
     const breachOrder: BreachOrder = { type: 'breach', target: 'gland' }
-    const after = runTicks(dormantState, [breachOrder], BREACH_TICKS + 5)
-    // Barrier should remain intact — no progress while dormant
-    expect(edgeBarrier(after, 'vessel_b', 'gland')).toBe(true)
+    const after = runTicks(dormantVesselB, [breachOrder], BREACH_TICKS)
+    // Barrier opens normally — per-node dormancy only affects income/heat
+    expect(edgeBarrier(after, 'vessel_b', 'gland')).toBe(false)
   })
 })
 
