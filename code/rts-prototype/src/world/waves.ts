@@ -10,10 +10,10 @@ import { World, Entity, Vec2 } from './types';
 // ---------------------------------------------------------------------------
 
 /** Seconds between wave arrivals. */
-export const WAVE_INTERVAL = 30;          // seconds
+export const WAVE_INTERVAL = 20;          // seconds — enough to build a starting force, soon enough that waves contest the organ
 
 /** How many immune units spawn in wave 1. */
-export const WAVE_BASE_SIZE = 3;
+export const WAVE_BASE_SIZE = 4;
 
 /** Additional units added per subsequent wave. */
 export const WAVE_SIZE_INCREMENT = 2;

@@ -33,6 +33,9 @@ function makeWorld(entities: Entity[], elapsed = 0): World {
     paused: false,
     biomass: 50,
     rallyPoint: null,
+    gameState: 'playing',
+    captureProgress: 0,
+    organContested: false,
   };
 }
 

@@ -9,6 +9,7 @@ import { UNIT_DEFS } from '../world/economy';
 import { attackEffects, AttackEffect } from '../world/combat';
 import { WaveState, WAVE_INTERVAL } from '../world/waves';
 import { waveState } from '../world/world';
+import { CAPTURE_TIME, CAPTURE_RADIUS, findOrgan } from '../world/capture';
 
 const ENTITY_COLORS: Record<string, string> = {
   placeholder: '#44ff88',
@@ -252,6 +253,105 @@ function drawNeutrophil(
   ctx.fillRect(bx, by, barW * Math.max(0, entity.hp / entity.maxHp), barH);
 }
 
+/**
+ * Draw the ORGAN capture objective.
+ *
+ * - A faint dashed ring shows the capture radius (where your units must stand).
+ * - A bold arc around the organ fills clockwise as capture progresses.
+ * - Color/labels make the state obvious: gold = idle, green = capturing,
+ *   red pulse = contested by the immune system.
+ */
+function drawOrgan(
+  ctx: CanvasRenderingContext2D,
+  entity: Entity,
+  world: World,
+): void {
+  const { x, y } = entity.pos;
+  const radius = 26;
+  const frac = Math.min(1, world.captureProgress / CAPTURE_TIME);
+  const capturing = world.captureProgress > 0;
+  const contested = world.organContested;
+
+  // Capture-radius ring (where units must stand to hold it)
+  ctx.save();
+  ctx.strokeStyle = contested ? 'rgba(255,70,90,0.45)' : 'rgba(255,200,60,0.30)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath();
+  ctx.arc(x, y, CAPTURE_RADIUS, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // Outer glow — pulses red when contested
+  const t = world.elapsed;
+  const pulse = contested ? 0.5 + 0.5 * Math.sin(t * 8) : 1;
+  const glowColor = contested ? '#ff3344' : '#ffaa00';
+  const grd = ctx.createRadialGradient(x, y, 0, x, y, radius * 2.4);
+  grd.addColorStop(0, glowColor + (contested ? '88' : '55'));
+  grd.addColorStop(1, 'transparent');
+  ctx.save();
+  ctx.globalAlpha = 0.6 + 0.4 * pulse;
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(x, y, radius * 2.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Organ body — a clustered "gland" of overlapping lobes
+  ctx.save();
+  ctx.fillStyle = '#ffaa00';
+  ctx.strokeStyle = '#ffdd66';
+  ctx.lineWidth = 2;
+  const lobes = 7;
+  for (let i = 0; i < lobes; i++) {
+    const a = (i / lobes) * Math.PI * 2;
+    const lx = x + Math.cos(a) * radius * 0.5;
+    const ly = y + Math.sin(a) * radius * 0.5;
+    ctx.beginPath();
+    ctx.arc(lx, ly, radius * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.beginPath();
+  ctx.arc(x, y, radius * 0.55, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  // Capture progress arc (thick ring, fills clockwise from top)
+  if (capturing) {
+    ctx.save();
+    ctx.strokeStyle = contested ? '#ff5566' : '#55ff66';
+    ctx.lineWidth = 5;
+    ctx.lineCap = 'round';
+    ctx.shadowColor = ctx.strokeStyle;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(x, y, radius + 8, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Label + percentage
+  ctx.fillStyle = '#ffe08a';
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('ORGAN (capture)', x, y + radius + 12);
+
+  if (capturing) {
+    const pct = Math.floor(frac * 100);
+    ctx.fillStyle = contested ? '#ff8899' : '#aaffaa';
+    ctx.font = 'bold 12px monospace';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(
+      contested ? `CONTESTED ${pct}%` : `${pct}%`,
+      x,
+      y - radius - 12,
+    );
+  }
+}
+
 /** Draw attack effects (projectile lines and melee flashes). */
 function drawAttackEffects(ctx: CanvasRenderingContext2D, effects: AttackEffect[]): void {
   for (const fx of effects) {
@@ -357,7 +457,9 @@ function drawEntity(
   entity: Entity,
   selected: boolean,
 ): void {
-  if (entity.kind === 'base') {
+  if (entity.kind === 'organ') {
+    return; // organ is drawn separately (needs world capture state)
+  } else if (entity.kind === 'base') {
     drawBase(ctx, entity, selected);
   } else if (entity.kind === 'macrophage') {
     drawMacrophage(ctx, entity, selected);
@@ -533,7 +635,7 @@ function drawMoveMarkers(ctx: CanvasRenderingContext2D, markers: MoveMarker[]): 
   }
 }
 
-/** Overlay shown when paused. */
+/** Overlay shown when paused mid-game (Space). */
 function drawPauseOverlay(ctx: CanvasRenderingContext2D, width: number, height: number): void {
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.fillRect(0, 0, width, height);
@@ -542,82 +644,319 @@ function drawPauseOverlay(ctx: CanvasRenderingContext2D, width: number, height: 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('PAUSED', width / 2, height / 2);
+  ctx.font = '13px monospace';
+  ctx.fillStyle = '#aaaaaa';
+  ctx.fillText('SPACE to resume', width / 2, height / 2 + 30);
 }
 
-/** Wave indicator — wave number + "incoming" flash when a wave just spawned. */
-function drawWaveHUD(
+// ---------------------------------------------------------------------------
+// Overlay button — a single clickable rectangle. The geometry is exported so
+// the input layer can hit-test clicks against it.
+// ---------------------------------------------------------------------------
+
+export interface ButtonRect { x: number; y: number; w: number; h: number; }
+
+/** Compute the standard centred overlay button rect for a given arena size. */
+export function overlayButtonRect(width: number, height: number): ButtonRect {
+  const w = 240;
+  const h = 52;
+  return { x: width / 2 - w / 2, y: height * 0.66, w, h };
+}
+
+function drawButton(ctx: CanvasRenderingContext2D, r: ButtonRect, label: string, accent: string): void {
+  ctx.save();
+  ctx.fillStyle = accent;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(r.x, r.y, r.w, r.h, 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#06140b';
+  ctx.font = 'bold 20px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 1);
+  ctx.restore();
+}
+
+/**
+ * Onboarding overlay — start-paused tutorial.
+ * Leads with the core loop, then the controls, then the win/lose lines.
+ * The sim does not run until the player clicks BEGIN (handled by input layer).
+ */
+function drawOnboarding(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+  ctx.save();
+  ctx.fillStyle = 'rgba(2, 8, 5, 0.92)';
+  ctx.fillRect(0, 0, width, height);
+
+  const cx = width / 2;
+  ctx.textAlign = 'center';
+
+  // Title
+  ctx.fillStyle = '#7CFF9B';
+  ctx.font = 'bold 34px monospace';
+  ctx.textBaseline = 'top';
+  ctx.fillText('GERM WARFARE', cx, height * 0.10);
+
+  ctx.fillStyle = '#cfe8d8';
+  ctx.font = '15px monospace';
+  ctx.fillText('You are an INFECTION inside a body. The immune system wants you dead.', cx, height * 0.10 + 44);
+
+  // Core loop — the headline
+  const loop: string[] = [
+    'THE LOOP:',
+    '1.  BUILD germs from your BASE  —  press  Q / W / E  (Spreader / Brute / Spitter)',
+    '2.  COMMAND them  —  click to select · drag a box to select many · right-click to move/attack',
+    '3.  DEFEND your base from the immune WAVES (they get bigger over time)',
+    '4.  PUSH across the map and HOLD the ORGAN to capture it',
+  ];
+  ctx.font = '15px monospace';
+  let y = height * 0.30;
+  for (const line of loop) {
+    const isHeader = line.endsWith(':');
+    ctx.fillStyle = isHeader ? '#ffe08a' : '#e6f3ec';
+    ctx.font = isHeader ? 'bold 16px monospace' : '15px monospace';
+    ctx.fillText(line, cx, y);
+    y += isHeader ? 30 : 26;
+  }
+
+  // Win / lose one-liners
+  y += 10;
+  ctx.font = 'bold 15px monospace';
+  ctx.fillStyle = '#7CFF9B';
+  ctx.fillText('WIN: hold the ORGAN long enough to take the vector.', cx, y);
+  ctx.fillStyle = '#ff6b6b';
+  ctx.fillText('LOSE: your BASE is destroyed.', cx, y + 26);
+
+  // Begin button
+  drawButton(ctx, overlayButtonRect(width, height), '▶ BEGIN', '#7CFF9B');
+
+  ctx.fillStyle = '#8fae9c';
+  ctx.font = '12px monospace';
+  ctx.textBaseline = 'top';
+  ctx.fillText('(click BEGIN or press SPACE to start — no rush, the game is paused)',
+    cx, overlayButtonRect(width, height).y + overlayButtonRect(width, height).h + 12);
+
+  ctx.restore();
+}
+
+/** Win / Lose end-screen overlay with a one-line reason and restart prompt. */
+function drawEndOverlay(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  won: boolean,
+): void {
+  ctx.save();
+  ctx.fillStyle = won ? 'rgba(4, 20, 10, 0.90)' : 'rgba(22, 4, 6, 0.90)';
+  ctx.fillRect(0, 0, width, height);
+
+  const cx = width / 2;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  ctx.fillStyle = won ? '#7CFF9B' : '#ff5a5a';
+  ctx.font = 'bold 56px monospace';
+  ctx.fillText(won ? 'VICTORY' : 'DEFEAT', cx, height * 0.36);
+
+  ctx.fillStyle = '#e6f3ec';
+  ctx.font = '17px monospace';
+  ctx.fillText(
+    won
+      ? 'You captured the organ — the vector is yours.'
+      : 'Your base was destroyed by the immune system.',
+    cx, height * 0.36 + 56,
+  );
+
+  drawButton(ctx, overlayButtonRect(width, height), '↻ RESTART (R)', won ? '#7CFF9B' : '#ff8a6b');
+  ctx.restore();
+}
+
+/** Small labelled stat bar helper (label left, value baked into the fill). */
+function drawStatBar(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number,
+  frac: number,
+  fillColor: string,
+  trackBorder: string,
+  label: string,
+): void {
+  ctx.fillStyle = 'rgba(10, 8, 20, 0.78)';
+  ctx.strokeStyle = trackBorder;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 3);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = fillColor;
+  ctx.beginPath();
+  ctx.roundRect(x + 1, y + 1, Math.max(0, (w - 2) * Math.min(1, frac)), h - 2, 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, x + w / 2, y + h / 2);
+}
+
+/**
+ * Top HUD bar — the player's at-a-glance dashboard.
+ * Left → right: base health, biomass, your-unit count, wave + next-wave timer,
+ * and organ capture progress. Everything pinned to the top edge so nothing clips.
+ */
+function drawHUD(
   ctx: CanvasRenderingContext2D,
   world: World,
   ws: WaveState,
 ): void {
-  const x = world.width / 2;
-  const y = 14;
+  const top = 8;
+  const h = 22;
+  let x = 10;
 
-  // Wave number label
-  ctx.font = 'bold 13px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
+  // Translucent strip behind the whole HUD for legibility over the arena
+  ctx.save();
+  ctx.fillStyle = 'rgba(6, 14, 9, 0.55)';
+  ctx.fillRect(0, 0, world.width, top + h + 8);
+  ctx.restore();
 
-  const nextWaveIn = Math.max(0, WAVE_INTERVAL - ws.timer);
-  const waveLabel = ws.waveNumber === 0
-    ? `WAVE 1 IN  ${nextWaveIn.toFixed(0)}s`
-    : `WAVE ${ws.waveNumber}  |  next in ${nextWaveIn.toFixed(0)}s`;
+  // --- Base health ---
+  const base = world.entities.find((e) => e.kind === 'base' && e.owner === 'you');
+  const baseFrac = base ? base.hp / base.maxHp : 0;
+  const baseHp = base ? Math.ceil(base.hp) : 0;
+  const baseMax = base ? base.maxHp : 0;
+  const baseColor = baseFrac > 0.5 ? '#aa66ff' : baseFrac > 0.25 ? '#ffaa33' : '#ff4444';
+  drawStatBar(ctx, x, top, 168, h, baseFrac, baseColor, '#8866ff',
+    `BASE HP  ${baseHp}/${baseMax}`);
+  x += 168 + 8;
 
-  ctx.fillStyle = '#cc4466';
-  ctx.fillText(waveLabel, x, y);
+  // --- Biomass ---
+  drawStatBar(ctx, x, top, 150, h, Math.min(world.biomass / 200, 1), '#33bb33', '#44aa44',
+    `BIOMASS  ${Math.floor(world.biomass)}`);
+  x += 150 + 8;
 
-  // "WAVE INCOMING" flash — show for 2s after spawn
-  if (ws.waveJustSpawned) {
-    ctx.save();
-    ctx.font = 'bold 22px monospace';
-    ctx.fillStyle = '#ff2244';
-    ctx.shadowColor = '#ff0000';
-    ctx.shadowBlur = 20;
-    ctx.fillText(`⚠ WAVE ${ws.waveNumber} INCOMING`, x, world.height / 2 - 60);
-    ctx.restore();
-  }
-}
-
-/** HUD — biomass, elapsed time, entity count, selection count. */
-function drawHUD(
-  ctx: CanvasRenderingContext2D,
-  world: World,
-  input: InputState,
-): void {
-  // Biomass bar (top-right)
-  const barX = world.width - 210;
-  const barY = 8;
-  const barW = 200;
-  const barH = 20;
-  const fillFrac = Math.min(world.biomass / 200, 1); // cap bar at 200 for visual
-
-  ctx.fillStyle = 'rgba(10, 8, 20, 0.75)';
-  ctx.strokeStyle = '#44aa44';
+  // --- Your unit count (mobile 'you' units, excluding base) ---
+  const unitCount = world.entities.filter(
+    (e) => e.owner === 'you' && e.kind !== 'base',
+  ).length;
+  ctx.fillStyle = 'rgba(10, 8, 20, 0.78)';
+  ctx.strokeStyle = '#33ccff';
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.roundRect(barX, barY, barW, barH, 3);
+  ctx.roundRect(x, top, 110, h, 3);
   ctx.fill();
   ctx.stroke();
-
-  ctx.fillStyle = '#33bb33';
-  ctx.beginPath();
-  ctx.roundRect(barX + 1, barY + 1, (barW - 2) * fillFrac, barH - 2, 2);
-  ctx.fill();
-
-  ctx.fillStyle = '#aaffaa';
+  ctx.fillStyle = '#aef0ff';
   ctx.font = 'bold 11px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(`BIOMASS  ${Math.floor(world.biomass)}`, barX + barW / 2, barY + barH / 2);
+  ctx.fillText(`GERMS  ${unitCount}`, x + 55, top + h / 2);
+  x += 110 + 8;
 
-  // Left-side info
-  ctx.fillStyle = '#aaffaa';
-  ctx.font = '12px monospace';
+  // --- Wave + next-wave timer ---
+  const nextWaveIn = Math.max(0, WAVE_INTERVAL - ws.timer);
+  const waveLabel = ws.waveNumber === 0
+    ? `WAVE 1 in ${nextWaveIn.toFixed(0)}s`
+    : `WAVE ${ws.waveNumber}  next ${nextWaveIn.toFixed(0)}s`;
+  const waveW = 168;
+  ctx.fillStyle = 'rgba(20, 6, 10, 0.8)';
+  ctx.strokeStyle = '#cc4466';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(x, top, waveW, h, 3);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#ff8095';
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(waveLabel, x + waveW / 2, top + h / 2);
+  x += waveW + 8;
+
+  // --- Organ capture progress ---
+  const capFrac = Math.min(1, world.captureProgress / CAPTURE_TIME);
+  const capColor = world.organContested ? '#ff5566' : '#55ff66';
+  drawStatBar(ctx, x, top, 188, h, capFrac, capColor, '#ffaa00',
+    `ORGAN  ${Math.floor(capFrac * 100)}%${world.organContested ? ' (contested)' : ''}`);
+}
+
+/** "WAVE INCOMING" flash when a wave just spawned. */
+function drawWaveFlash(
+  ctx: CanvasRenderingContext2D,
+  world: World,
+  ws: WaveState,
+): void {
+  if (!ws.waveJustSpawned) return;
+  ctx.save();
+  ctx.font = 'bold 22px monospace';
+  ctx.fillStyle = '#ff2244';
+  ctx.shadowColor = '#ff0000';
+  ctx.shadowBlur = 20;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`WAVE ${ws.waveNumber} INCOMING`, world.width / 2, 70);
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// Persistent legend (bottom-right) — what every shape means.
+// ---------------------------------------------------------------------------
+
+function drawLegend(ctx: CanvasRenderingContext2D, world: World): void {
+  const rows: Array<{ color: string; text: string }> = [
+    { color: ENTITY_COLORS.base,       text: 'BASE — your home (defend it!)' },
+    { color: ENTITY_COLORS.spreader,   text: 'YOUR GERMS (Q/W/E)' },
+    { color: ENTITY_COLORS.macrophage, text: 'IMMUNE (waves attack you)' },
+    { color: ENTITY_COLORS.organ,      text: 'ORGAN — hold it to WIN' },
+  ];
+
+  const padX = 10;
+  const lineH = 16;
+  const boxW = 232;
+  const boxH = rows.length * lineH + 30;
+  const bx = world.width - boxW - 8;
+  const by = world.height - boxH - 8;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(6, 14, 9, 0.82)';
+  ctx.strokeStyle = '#2a5a38';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(bx, by, boxW, boxH, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#bfe8cc';
+  ctx.font = 'bold 10px monospace';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.fillText(`t = ${world.elapsed.toFixed(2)}s`, 10, 10);
-  ctx.fillText(`entities: ${world.entities.length}`, 10, 26);
-  ctx.fillText(`selected: ${input.selected.size}`, 10, 42);
+  ctx.fillText('LEGEND', bx + padX, by + 8);
+
+  rows.forEach((r, i) => {
+    const ry = by + 24 + i * lineH;
+    // Swatch
+    ctx.fillStyle = r.color;
+    ctx.beginPath();
+    ctx.arc(bx + padX + 5, ry + 5, 5, 0, Math.PI * 2);
+    ctx.fill();
+    // Label
+    ctx.fillStyle = '#dfeee5';
+    ctx.font = '10px monospace';
+    ctx.fillText(r.text, bx + padX + 16, ry);
+  });
+  ctx.restore();
+
+  // One-line goal/tip just above the legend box
+  ctx.save();
+  ctx.fillStyle = '#ffe08a';
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('GOAL: build germs, defend base, take the ORGAN →',
+    world.width - 8, by - 6);
+  ctx.restore();
 }
 
 // ---------------------------------------------------------------------------
@@ -636,6 +975,10 @@ export function render(
   // Draw rally point before units so units render on top
   drawRallyPoint(ctx, world, input);
 
+  // Organ first (under units) so units holding it render on top of the gland
+  const organ = findOrgan(world);
+  if (organ) drawOrgan(ctx, organ, world);
+
   for (const entity of world.entities) {
     drawEntity(ctx, entity, input.selected.has(entity.id));
   }
@@ -643,11 +986,19 @@ export function render(
   drawAttackEffects(ctx, attackEffects);
   drawDragBox(ctx, input);
   drawMoveMarkers(ctx, input.moveMarkers);
-  drawHUD(ctx, world, input);
-  drawWaveHUD(ctx, world, waveState);
+  drawHUD(ctx, world, waveState);
+  drawWaveFlash(ctx, world, waveState);
   drawProductionPanel(ctx, world, input);
+  drawLegend(ctx, world);
 
-  if (world.paused) {
+  // --- Overlays (mutually exclusive by game state) ---
+  if (world.gameState === 'onboarding') {
+    drawOnboarding(ctx, width, height);
+  } else if (world.gameState === 'won') {
+    drawEndOverlay(ctx, width, height, true);
+  } else if (world.gameState === 'lost') {
+    drawEndOverlay(ctx, width, height, false);
+  } else if (world.paused) {
     drawPauseOverlay(ctx, width, height);
   }
 }

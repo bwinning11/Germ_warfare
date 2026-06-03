@@ -7,6 +7,36 @@
 import { World, Entity, Vec2 } from '../world/types';
 import { unitAtPoint, unitsInRect, Rect } from '../world/selection';
 import { produce } from '../world/economy';
+import { resetWorld } from '../world/world';
+import { overlayButtonRect } from '../render/render';
+
+// ---------------------------------------------------------------------------
+// State transitions shared by mouse + keyboard handlers.
+// ---------------------------------------------------------------------------
+
+/** Leave onboarding (or a pause) and start the live match. */
+function beginMatch(world: World): void {
+  if (world.gameState === 'onboarding') {
+    world.gameState = 'playing';
+    world.paused = false;
+  }
+}
+
+/** Restart from a fresh world (used on R or the RESTART button). */
+function restartMatch(world: World, state: InputState): void {
+  resetWorld(world);
+  state.selected.clear();
+  state.dragBox = null;
+  state.dragStart = null;
+  state.isDragging = false;
+  state.moveMarkers = [];
+}
+
+/** Is a point inside the centred overlay button for this world size? */
+function hitOverlayButton(world: World, p: Vec2): boolean {
+  const r = overlayButtonRect(world.width, world.height);
+  return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+}
 
 // ---------------------------------------------------------------------------
 // Formation spread: when right-clicking with N units selected, spread their
@@ -105,19 +135,30 @@ export function attachInput(
   world: World,
   state: InputState,
 ): void {
-  // --- Mouse down: start potential drag or click ---
+  // --- Mouse down: overlay buttons first, else start potential drag/click ---
   canvas.addEventListener('mousedown', (e) => {
-    if (e.button === 0) {
-      // Left button
-      const pos = canvasPos(canvas, e);
-      state.dragStart = pos;
-      state.isDragging = false;
-      state.dragBox = { x: pos.x, y: pos.y, w: 0, h: 0 };
+    if (e.button !== 0) return;
+    const pos = canvasPos(canvas, e);
+
+    // Overlay buttons: BEGIN (onboarding) / RESTART (won|lost)
+    if (world.gameState === 'onboarding') {
+      if (hitOverlayButton(world, pos)) beginMatch(world);
+      return; // no world interaction while the tutorial is up
     }
+    if (world.gameState === 'won' || world.gameState === 'lost') {
+      if (hitOverlayButton(world, pos)) restartMatch(world, state);
+      return;
+    }
+
+    // Live play — begin a potential drag or click selection
+    state.dragStart = pos;
+    state.isDragging = false;
+    state.dragBox = { x: pos.x, y: pos.y, w: 0, h: 0 };
   });
 
   // --- Mouse move: update drag box ---
   canvas.addEventListener('mousemove', (e) => {
+    if (world.gameState !== 'playing') return;
     if (state.dragStart === null) return;
     const pos = canvasPos(canvas, e);
     const dx = pos.x - state.dragStart.x;
@@ -140,6 +181,7 @@ export function attachInput(
   // --- Mouse up: finalise click or drag selection ---
   canvas.addEventListener('mouseup', (e) => {
     if (e.button !== 0) return;
+    if (world.gameState !== 'playing') return;
 
     const pos = canvasPos(canvas, e);
 
@@ -175,6 +217,7 @@ export function attachInput(
   // --- Right-click: set rally (if base selected alone), attack-command (if clicking enemy), or move ---
   canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault();
+    if (world.gameState !== 'playing') return;
     if (state.selected.size === 0) return;
 
     const clickPos = canvasPos(canvas, e);
@@ -240,11 +283,25 @@ export function attachInput(
  */
 export function attachKeyboard(world: World, state: InputState): void {
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'Space') {
+    // R — restart from anywhere (most useful on the win/lose screens)
+    if (e.code === 'KeyR') {
       e.preventDefault();
-      world.paused = !world.paused;
+      restartMatch(world, state);
       return;
     }
+
+    if (e.code === 'Space') {
+      e.preventDefault();
+      if (world.gameState === 'onboarding') {
+        beginMatch(world);          // SPACE also starts the match from the tutorial
+      } else if (world.gameState === 'playing') {
+        world.paused = !world.paused; // toggle pause during live play
+      }
+      return;
+    }
+
+    // Everything below is live-play only
+    if (world.gameState !== 'playing') return;
 
     // Production hotkeys only fire when the base is selected
     const baseSelected = world.entities.some(

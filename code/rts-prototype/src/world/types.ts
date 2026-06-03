@@ -21,6 +21,15 @@ export type EntityKind =
   | 'antibody'      // immune projectile (future)
   | 'organ';        // capture objective (future)
 
+/**
+ * High-level state of the match.
+ *  - 'onboarding' : start-paused tutorial overlay; sim frozen until the player clicks BEGIN.
+ *  - 'playing'    : the match is live.
+ *  - 'won'        : the player captured the organ.
+ *  - 'lost'       : the player's base was destroyed.
+ */
+export type GameState = 'onboarding' | 'playing' | 'won' | 'lost';
+
 /** 2D position or velocity vector. */
 export interface Vec2 {
   x: number;
@@ -66,4 +75,13 @@ export interface World {
   biomass: number;
   /** Rally point: newly produced units move here after spawning. */
   rallyPoint: Vec2 | null;
+  /** High-level match state (onboarding / playing / won / lost). */
+  gameState: GameState;
+  /**
+   * Capture progress on the organ, in seconds held (0 .. CAPTURE_TIME).
+   * Climbs while you hold the organ uncontested; decays when you don't.
+   */
+  captureProgress: number;
+  /** True when an immune unit is contesting the organ (capture stalled). */
+  organContested: boolean;
 }

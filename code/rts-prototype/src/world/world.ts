@@ -7,6 +7,7 @@ import { World, Entity, Vec2 } from './types';
 import { tickIncome } from './economy';
 import { tickCombat, removeDeadEntities, updateEffects } from './combat';
 import { createWaveState, tickWaves, tickImmunAI, WaveState } from './waves';
+import { makeOrgan, tickCapture } from './capture';
 
 // ---------------------------------------------------------------------------
 // Module-level wave state — lives alongside the world singleton
@@ -54,6 +55,9 @@ function makeUnit(pos: Vec2, moveTo: Vec2 | null = null): Entity {
   };
 }
 
+/** Base hit points. High enough to survive early waves if defended; falls if ignored. */
+export const BASE_HP = 320;
+
 /** Spawn the player's base at `pos`. */
 function makeBase(pos: Vec2): Entity {
   return {
@@ -61,8 +65,8 @@ function makeBase(pos: Vec2): Entity {
     kind: 'base',
     pos: { ...pos },
     vel: { x: 0, y: 0 },
-    hp: 200,
-    maxHp: 200,
+    hp: BASE_HP,
+    maxHp: BASE_HP,
     owner: 'you',
     data: { rallyPoint: null },
   };
@@ -79,6 +83,10 @@ export function createWorld(width: number, height: number): World {
   const spacing = 36;
 
   const base = makeBase({ x: baseX, y: baseY });
+
+  // The capture objective sits on the FAR side of the arena — the player must
+  // build an army and fight across the map (past the immune entry edges) to it.
+  const organ = makeOrgan({ x: width * 0.88, y: height * 0.5 });
 
   // Default rally point: just to the right of the base
   const rallyPoint: Vec2 = { x: baseX + 160, y: baseY };
@@ -101,14 +109,35 @@ export function createWorld(width: number, height: number): World {
   waveState = createWaveState();
 
   return {
-    entities: [base, ...units],
+    entities: [base, organ, ...units],
     width,
     height,
     elapsed: 0,
-    paused: false,
-    biomass: 50,          // starting resource
+    // Start paused under the onboarding overlay — the sim does not run until
+    // the player clicks BEGIN (no time pressure while reading the tutorial).
+    paused: true,
+    biomass: 60,          // starting resource — enough for a couple of units up front
     rallyPoint,
+    gameState: 'onboarding',
+    captureProgress: 0,
+    organContested: false,
   };
+}
+
+/**
+ * Reset an existing world object in place to a fresh start (used by Restart).
+ * Keeps the same object reference so input/render bindings stay valid.
+ */
+export function resetWorld(world: World): void {
+  const fresh = createWorld(world.width, world.height);
+  world.entities = fresh.entities;
+  world.elapsed = fresh.elapsed;
+  world.paused = fresh.paused;
+  world.biomass = fresh.biomass;
+  world.rallyPoint = fresh.rallyPoint;
+  world.gameState = fresh.gameState;
+  world.captureProgress = fresh.captureProgress;
+  world.organContested = fresh.organContested;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +152,9 @@ export function createWorld(width: number, height: number): World {
  * - Light separation prevents full stacking.
  */
 export function update(world: World, dt: number): World {
-  if (world.paused) return world;
+  // The sim only advances during live play. Onboarding / won / lost all freeze
+  // the world (paused also freezes it, e.g. via the Space key).
+  if (world.paused || world.gameState !== 'playing') return world;
 
   world.elapsed += dt;
 
@@ -203,6 +234,15 @@ export function update(world: World, dt: number): World {
   tickCombat(world, dt);
   removeDeadEntities(world);
   updateEffects(dt);
+
+  // --- Objective: capture the organ (may set gameState = 'won') ---
+  tickCapture(world, dt);
+
+  // --- Lose check: base destroyed ---
+  const baseAlive = world.entities.some((e) => e.kind === 'base' && e.owner === 'you');
+  if (!baseAlive && world.gameState === 'playing') {
+    world.gameState = 'lost';
+  }
 
   return world;
 }

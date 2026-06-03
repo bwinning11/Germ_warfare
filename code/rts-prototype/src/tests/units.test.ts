@@ -30,6 +30,8 @@ function makeUnit(id: string, x: number, y: number, owner: Entity['owner'] = 'yo
 describe('unit movement', () => {
   it('moves toward moveTo target and reduces distance each step', () => {
     const world = createWorld(1100, 740);
+    world.gameState = 'playing';
+    world.paused = false;
     // Replace placeholder with a spreader that has a move target
     world.entities = [];
     const unit = makeUnit('u1', 100, 100);
@@ -46,6 +48,8 @@ describe('unit movement', () => {
 
   it('stops within arrival radius when close to moveTo', () => {
     const world = createWorld(1100, 740);
+    world.gameState = 'playing';
+    world.paused = false;
     world.entities = [];
     const unit = makeUnit('u1', 199, 199);
     (unit.data as Record<string, unknown>).moveTo = { x: 200, y: 200 };
@@ -62,6 +66,8 @@ describe('unit movement', () => {
 
   it('clears moveTo once arrived', () => {
     const world = createWorld(1100, 740);
+    world.gameState = 'playing';
+    world.paused = false;
     world.entities = [];
     const unit = makeUnit('u1', 200, 200);
     (unit.data as Record<string, unknown>).moveTo = { x: 200, y: 200 };

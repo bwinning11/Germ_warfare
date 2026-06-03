@@ -40,7 +40,7 @@ export const UNIT_DEFS: Record<'spreader' | 'brute' | 'spitter', UnitDef> = {
 // ---------------------------------------------------------------------------
 
 /** Biomass generated per second (passive trickle). */
-export const INCOME_RATE = 10; // biomass/s
+export const INCOME_RATE = 12; // biomass/s
 
 /**
  * Advance the economy by `dt` seconds.
