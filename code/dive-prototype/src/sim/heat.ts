@@ -8,12 +8,16 @@
 // ─── Stage thresholds ────────────────────────────────────────────────────────
 
 /** Heat must reach this value to enter the 'alerted' stage (responders spawn). */
-export const HEAT_THRESHOLD_ALERTED = 20
+export const HEAT_THRESHOLD_ALERTED = 25
 
 /** Heat must reach this value to enter the 'active' stage (responders more aggressive). */
-export const HEAT_THRESHOLD_ACTIVE = 50
+export const HEAT_THRESHOLD_ACTIVE = 55
 
-/** Heat must reach this value to enter the 'overwhelming' stage (near-lethal response). */
+/**
+ * Heat must reach this value to enter the 'overwhelming' stage (near-lethal response).
+ * Kept at 90 so the dive runs long enough to learn, and so 1 hot zone (rise 1/tick)
+ * needs a full ~90 ticks to self-cook — escaping is always the faster way out.
+ */
 export const HEAT_THRESHOLD_OVERWHELMING = 90
 
 // ─── Rise / decay constants ───────────────────────────────────────────────────
@@ -35,10 +39,12 @@ export const HEAT_RISE_PER_OWNED_ZONE = 1
 export const HEAT_RISE_ACTIVE_COLONIZE = 2
 
 /**
- * Natural heat decay per tick when no owned zones are hot (or always applied
- * as a floor drag). A small passive bleed so Heat never freezes.
+ * Natural heat decay per tick when no owned zones are hot.
+ * Raised to 2 so going Dormant is a *felt* relief valve: dorm your hot nodes and
+ * the bar visibly retreats, buying time to defend or set up an escape. Pairs with
+ * the per-zone rise of 1 — a fully dormant network cools at 2/tick.
  */
-export const HEAT_NATURAL_DECAY = 1
+export const HEAT_NATURAL_DECAY = 2
 
 // ─── Stage classifier ────────────────────────────────────────────────────────
 

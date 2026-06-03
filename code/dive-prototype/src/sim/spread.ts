@@ -8,6 +8,23 @@ import { neighbors } from './map'
 export const COLONIZE_TICKS = 2
 
 /**
+ * Standing infection a freshly colonized zone holds once captured (tunable dial).
+ *
+ * This is the "health" of a hold: it is the reserve the innate immune system must
+ * grind through (RESPONDER_DAMAGE_PER_TICK per tick, reduced by Brute/Cyst) before
+ * the zone is cleared and flips back to neutral. With this > 0, the immune system
+ * can genuinely *sever* the network in real play by eating an interior chokepoint —
+ * which is the central tension of the dive.
+ *
+ * NOTE: the 'entry' core is deliberately seeded at infection 0 (see initialState),
+ * so it is never the highest-infection target while any colonized frontier node
+ * exists. The immune system therefore erodes your frontier first and only reaches
+ * your home portal last — a fair, legible threat. At 15 damage/tick an undefended
+ * captured node clears in ~7 ticks; a Brute (−8) ~15 ticks; a Cyst (−12) ~34 ticks.
+ */
+export const OWNED_INFECTION = 100
+
+/**
  * Checks whether a colonize order is valid:
  * - Target must not already be owned by 'you'.
  * - Target must be adjacent to at least one 'you'-owned zone.
@@ -53,9 +70,10 @@ export function applyColonize(state: GameState, orders: ColonizeOrder[]): GameSt
     progress[target] = (progress[target] ?? 0) + 1
 
     if (progress[target] >= COLONIZE_TICKS) {
-      // Flip ownership
+      // Flip ownership. The new hold carries OWNED_INFECTION standing infection —
+      // the reserve the immune system must grind through to reclaim it.
       zones = zones.map(z =>
-        z.id === target ? { ...z, owner: 'you' as const, infection: 0 } : z,
+        z.id === target ? { ...z, owner: 'you' as const, infection: OWNED_INFECTION } : z,
       )
       // Clear the progress entry
       const { [target]: _done, ...rest } = progress

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { initialState, step, COLONIZE_TICKS } from './dive'
+import { OWNED_INFECTION } from './spread'
 import { neighbors } from './map'
 import type { ColonizeOrder } from './types'
 
@@ -51,11 +52,11 @@ describe('colonize order — valid target (non-barrier neighbor)', () => {
     expect(zoneOwner(early, 'vessel_a')).toBe('none')
   })
 
-  it('colonized zone resets infection to 0 after flip', () => {
+  it('colonized zone carries OWNED_INFECTION standing infection after flip', () => {
     const s0 = initialState()
     const order: ColonizeOrder = { type: 'colonize', target: 'vessel_a' }
     const final = runTicks(s0, [order], COLONIZE_TICKS)
-    expect(zoneInfection(final, 'vessel_a')).toBe(0)
+    expect(zoneInfection(final, 'vessel_a')).toBe(OWNED_INFECTION)
   })
 })
 

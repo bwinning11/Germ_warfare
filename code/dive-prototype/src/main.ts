@@ -1,4 +1,4 @@
-// main.ts — Dive Prototype entry point.
+// main.ts — Enriched Dive Prototype entry point.
 //
 // Wires the pure simulation (src/sim) to canvas rendering (src/render) and
 // player input (src/input). Runs an active-pause loop, collects orders from
@@ -7,14 +7,15 @@
 //
 // First-dive legibility lives here too: the dive starts FROZEN behind an
 // onboarding overlay. The sim does not advance — and Heat does not rise — until
-// the player clicks to begin. The most recent command is held as `lastAction`
-// so the renderer can show a loud, named feedback banner.
+// the player clicks to begin. A selected-node cursor lets the keyboard verbs
+// (D / B / C) act on a specific node, and every command produces a loud,
+// named feedback banner.
 
 import { initialState, step } from './sim/dive'
-import type { GameState, Order } from './sim/types'
+import type { GameState, Order, ZoneId } from './sim/types'
 import { render, type LastAction } from './render/render'
-import { CANVAS_WIDTH, CANVAS_HEIGHT } from './render/layout'
-import { clickToOrder, keyToAction } from './input/input'
+import { CANVAS_WIDTH, CANVAS_HEIGHT, ZONE_LABEL } from './render/layout'
+import { clickToResult, keyToAction } from './input/input'
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement
 const ctx = canvas.getContext('2d')
@@ -28,71 +29,43 @@ if (!ctx) {
 let state: GameState = initialState()
 let paused = false
 
-/**
- * Whether the dive has begun. Starts false: the onboarding overlay is up and
- * the sim is frozen (no ticks, Heat stays at 0) until the player clicks begin.
- */
+/** Whether the dive has begun (false → onboarding overlay up, sim frozen). */
 let started = false
 
+/** The currently selected owned node (keyboard verbs act on it), or null. */
+let selected: ZoneId | null = null
+
 /**
- * The player's current sustained command. Colonize and breach require the same
- * order to be re-sent every tick to accumulate progress, so we hold the latest
- * one here and feed it in on each tick until it completes or is replaced.
- * Cleared automatically once the target is owned (colonize) or the barrier opens
- * (breach), so it never lingers.
+ * The player's current sustained command. Colonize and breach must be re-sent
+ * each tick to accumulate progress, so we hold the latest one and feed it in
+ * until it completes or is replaced.
  */
 let sustained: Order | null = null
 
-/** One-shot orders (dormancy, escape) queued by the most recent input. */
+/** One-shot orders (dormancy, escape, defense) queued by the most recent input. */
 let oneShot: Order[] = []
 
-/** Most recent player command, for the loud feedback banner. Cleared on expiry. */
+/** Most recent player command, for the loud feedback banner. */
 let lastAction: LastAction | null = null
 let lastActionUntil = 0
 
-const ACTION_BANNER_MS = 2200
+const ACTION_BANNER_MS = 2000
 
-// Human-readable zone names for feedback banners.
-const ZONE_LABEL: Record<string, string> = {
-  entry: 'ENTRY',
-  vessel_a: 'VESSEL A',
-  vessel_b: 'VESSEL B',
-  organ: 'ORGAN',
-  gland: 'GLAND',
-}
+const label = (id: ZoneId): string => ZONE_LABEL[id] ?? id
 
 function setAction(a: LastAction): void {
   lastAction = a
   lastActionUntil = performance.now() + ACTION_BANNER_MS
 }
 
-/** Turns an Order into the loud banner shown to the player. */
-function bannerFor(order: Order): LastAction {
-  switch (order.type) {
-    case 'colonize':
-      return { kind: 'colonize', label: `SPREADING → ${ZONE_LABEL[order.target] ?? order.target}`, targetZone: order.target }
-    case 'breach':
-      return { kind: 'breach', label: `BREACHING → ${ZONE_LABEL[order.target] ?? order.target}…`, targetZone: order.target }
-    case 'escape':
-      return { kind: 'escape', label: `ESCAPING via ${ZONE_LABEL[order.portal] ?? order.portal}`, targetZone: order.portal }
-    case 'dormancy':
-      return { kind: 'dormancy', label: `DORMANCY TOGGLE — ${order.zoneId}` }
-    case 'deployBrute':
-      return { kind: 'dormancy', label: `BRUTE DEPLOYED → ${order.zoneId}` }
-    case 'buildCyst':
-      return { kind: 'dormancy', label: `CYST BUILT → ${order.zoneId}` }
-  }
-}
-
 // ── Order assembly ───────────────────────────────────────────────────────────
 
-/** True once a sustained colonize/breach target has been achieved (so we can drop it). */
+/** True once a sustained colonize/breach target has been achieved (so we drop it). */
 function sustainedComplete(s: GameState, order: Order): boolean {
   if (order.type === 'colonize') {
     return s.map.zones.find(z => z.id === order.target)?.owner === 'you'
   }
   if (order.type === 'breach') {
-    // Barrier opened when no edge to the target is a barrier any more.
     return !s.map.edges.some(e => e.to === order.target && e.barrier)
   }
   return true
@@ -109,36 +82,39 @@ function collectOrders(): Order[] {
 
 // ── Tick + render ────────────────────────────────────────────────────────────
 
-// Slowed from 500ms so a first-time player can read the Heat bar climbing and
-// react before danger. Pairs with the lowered HEAT_RISE_* / *_TICKS constants.
+// ~800ms/tick keeps a first dive readable: the Heat bar climbs slowly enough to
+// read and react to. Pairs with the sim's heat-rise / colonize-tick constants.
 const TICK_INTERVAL_MS = 800
 
 function advance(): void {
   if (state.result !== 'ongoing') return
   const orders = collectOrders()
   state = step(state, orders)
+
   // Drop a sustained command once it has finished its job.
   if (sustained && sustainedComplete(state, sustained)) {
     sustained = null
-    // Let a finished spread's banner fade rather than linger forever.
     if (lastAction && (lastAction.kind === 'colonize' || lastAction.kind === 'breach')) {
       lastActionUntil = Math.min(lastActionUntil, performance.now() + 600)
     }
+  }
+
+  // If the selected node was lost to the immune system, clear the cursor.
+  if (selected && state.map.zones.find(z => z.id === selected)?.owner !== 'you') {
+    selected = null
   }
 }
 
 function draw(): void {
   const now = performance.now()
   if (lastAction && now > lastActionUntil) lastAction = null
-  render(ctx!, state, paused, { started, lastAction, nowMs: now })
+  render(ctx!, state, paused, { started, lastAction, selected, nowMs: now })
 }
 
-// Sim ticks on a fixed interval; only advances once started, unpaused, ongoing.
 const intervalId = setInterval(() => {
   if (started && !paused && state.result === 'ongoing') advance()
 }, TICK_INTERVAL_MS)
 
-// Continuous repaint so warning glows and feedback banners animate smoothly.
 let rafId = 0
 function frame(): void {
   draw()
@@ -146,10 +122,23 @@ function frame(): void {
 }
 rafId = requestAnimationFrame(frame)
 
+// ── Immediate (one-shot) order application ────────────────────────────────────
+//
+// Dormancy / Brute / Cyst / escape should feel instant. While unpaused we apply
+// them immediately via a step(); while paused we queue them so pause stays a
+// true freeze (they fire on resume).
+
+function applyImmediate(order: Order): void {
+  if (paused) {
+    oneShot.push(order)
+  } else {
+    state = step(state, [order, ...collectOrders()])
+  }
+}
+
 // ── Input: mouse ──────────────────────────────────────────────────────────────
 
 function canvasPoint(e: MouseEvent): { x: number; y: number } {
-  // Map client coords → canvas pixel coords (handles CSS scaling if any).
   const rect = canvas.getBoundingClientRect()
   const x = ((e.clientX - rect.left) / rect.width) * CANVAS_WIDTH
   const y = ((e.clientY - rect.top) / rect.height) * CANVAS_HEIGHT
@@ -157,8 +146,7 @@ function canvasPoint(e: MouseEvent): { x: number; y: number } {
 }
 
 canvas.addEventListener('click', (e: MouseEvent) => {
-  // First click dismisses onboarding and begins the dive — it issues no order,
-  // so the player can't accidentally fling a command while orienting.
+  // First click dismisses onboarding and begins the dive — issues no order.
   if (!started) {
     started = true
     return
@@ -166,52 +154,92 @@ canvas.addEventListener('click', (e: MouseEvent) => {
 
   if (state.result !== 'ongoing') return
   const { x, y } = canvasPoint(e)
-  const order = clickToOrder(state, x, y)
-  if (!order) return
+  const result = clickToResult(state, x, y)
 
-  if (order.type === 'colonize' || order.type === 'breach') {
-    // Sustained command — replaces any previous one. Takes effect on ticks.
+  if (result.kind === 'select') {
+    selected = result.zoneId
+    setAction({ kind: 'select', label: `SELECTED ${label(result.zoneId)} — D / B / C`, targetZone: result.zoneId })
+    return
+  }
+
+  if (result.kind !== 'order') return
+  const order = result.order
+
+  if (order.type === 'colonize') {
     sustained = order
-    setAction(bannerFor(order))
+    setAction({ kind: 'colonize', label: `SPREADING → ${label(order.target)}`, targetZone: order.target })
+  } else if (order.type === 'breach') {
+    sustained = order
+    setAction({ kind: 'breach', label: `BREACHING → ${label(order.target)}…`, targetZone: order.target })
   } else if (order.type === 'escape') {
-    // Escape resolves immediately so it feels instant — but not while paused
-    // (a paused game is a true freeze). Queue it; it fires on resume otherwise.
-    oneShot.push(order)
-    setAction(bannerFor(order))
-    if (!paused) state = step(state, collectOrders())
+    setAction({ kind: 'escape', label: `ESCAPING via ${label(order.portal)}`, targetZone: order.portal })
+    applyImmediate(order)
   }
 })
 
 // ── Input: keyboard ────────────────────────────────────────────────────────
 
 window.addEventListener('keydown', (e: KeyboardEvent) => {
-  const action = keyToAction(e.code)
+  const action = keyToAction(e.code, selected)
 
   if (action.kind === 'pause') {
-    e.preventDefault() // stop page scroll on Space
-    if (!started) return // Space does nothing while onboarding is up
+    e.preventDefault()
+    if (!started) return
     paused = !paused
+    return
+  }
+
+  if (action.kind === 'restart') {
+    e.preventDefault()
+    // Allow restart any time after the dive has started (esp. on result screen).
+    if (!started) return
+    state = initialState()
+    selected = null
+    sustained = null
+    oneShot = []
+    lastAction = null
+    paused = false
+    return
+  }
+
+  if (!started || state.result !== 'ongoing') return
+
+  if (action.kind === 'needSelect') {
+    e.preventDefault()
+    setAction({ kind: 'select', label: 'SELECT ONE OF YOUR NODES FIRST (click it)' })
     return
   }
 
   if (action.kind === 'order') {
     e.preventDefault()
-    if (!started) return
-    if (state.result !== 'ongoing') return
-    if (action.order.type === 'dormancy') {
-      // Apply dormancy immediately so the stealth toggle feels instant. While
-      // paused, queue it instead so pause stays a true freeze (fires on resume).
-      if (paused) {
-        oneShot.push(action.order)
-      } else {
-        state = step(state, [action.order, ...collectOrders()])
-      }
-      // Banner reflects the resulting mode (entering vs leaving dormancy).
-      if (state.dormant || paused) {
-        setAction(bannerFor(action.order))
-      } else {
-        setAction({ kind: 'dormancy', label: 'WAKING — resuming spread' })
-      }
+    const order = action.order
+
+    if (order.type === 'dormancy') {
+      applyImmediate(order)
+      const nowDormant = state.dormant.has(order.zoneId)
+      setAction(
+        nowDormant
+          ? { kind: 'dormancy', label: `${label(order.zoneId)} → DORMANT (cooling)`, targetZone: order.zoneId }
+          : { kind: 'dormancy', label: `${label(order.zoneId)} → HOT (earning)`, targetZone: order.zoneId },
+      )
+    } else if (order.type === 'deployBrute') {
+      const before = state.brutes.has(order.zoneId)
+      applyImmediate(order)
+      const placed = !before && state.brutes.has(order.zoneId)
+      setAction(
+        placed
+          ? { kind: 'brute', label: `BRUTE deployed → ${label(order.zoneId)}`, targetZone: order.zoneId }
+          : { kind: 'brute', label: `can't deploy Brute (need biomass)`, targetZone: order.zoneId },
+      )
+    } else if (order.type === 'buildCyst') {
+      const before = state.cysts.has(order.zoneId)
+      applyImmediate(order)
+      const placed = !before && state.cysts.has(order.zoneId)
+      setAction(
+        placed
+          ? { kind: 'cyst', label: `CYST built → ${label(order.zoneId)}`, targetZone: order.zoneId }
+          : { kind: 'cyst', label: `can't build Cyst (need biomass)`, targetZone: order.zoneId },
+      )
     }
   }
 })
