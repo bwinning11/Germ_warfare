@@ -14,6 +14,10 @@ export interface UnitDef {
   cost: number;   // biomass cost to produce
   hp: number;     // starting (and max) hit points
   speed: number;  // movement speed in px/s
+  // Combat stats (added T4) — mirrors CombatDef in combat.ts for reference
+  damage: number;
+  range: number;
+  cooldown: number;
 }
 
 /**
@@ -26,9 +30,9 @@ export interface UnitDef {
  * | spitter  |  40  |  35 |   95  | ranged attacker (T4)  |
  */
 export const UNIT_DEFS: Record<'spreader' | 'brute' | 'spitter', UnitDef> = {
-  spreader: { cost: 20, hp: 15,  speed: 130 },
-  brute:    { cost: 60, hp: 80,  speed: 65  },
-  spitter:  { cost: 40, hp: 35,  speed: 95  },
+  spreader: { cost: 20, hp: 15,  speed: 130, damage: 4,  range: 28,  cooldown: 0.60 },
+  brute:    { cost: 60, hp: 80,  speed: 65,  damage: 18, range: 32,  cooldown: 1.40 },
+  spitter:  { cost: 40, hp: 35,  speed: 95,  damage: 9,  range: 180, cooldown: 1.10 },
 };
 
 // ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ import { World, Entity } from '../world/types';
 import { InputState, MoveMarker } from '../input/input';
 import { normaliseRect } from '../world/selection';
 import { UNIT_DEFS } from '../world/economy';
+import { attackEffects, AttackEffect } from '../world/combat';
 
 const ENTITY_COLORS: Record<string, string> = {
   placeholder: '#44ff88',
@@ -126,6 +127,110 @@ function drawBase(
   ctx.fillText('BASE', x, y + radius + 4);
 }
 
+/** Draw a macrophage immune enemy. */
+function drawMacrophage(
+  ctx: CanvasRenderingContext2D,
+  entity: Entity,
+  selected: boolean,
+): void {
+  const { x, y } = entity.pos;
+  const radius = 14;
+  const color = ENTITY_COLORS.macrophage;
+
+  if (selected) {
+    ctx.save();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#ff4455';
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(x, y, radius + 6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Outer pulsing glow
+  const grd = ctx.createRadialGradient(x, y, 0, x, y, radius * 2.5);
+  grd.addColorStop(0, color + '66');
+  grd.addColorStop(1, 'transparent');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(x, y, radius * 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Body: irregular pentagon-ish blob (rotate slightly for organic feel)
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#ff8899';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  const sides = 5;
+  for (let i = 0; i < sides; i++) {
+    const angle = (i / sides) * Math.PI * 2 - Math.PI / 2;
+    const r = radius * (0.85 + 0.15 * Math.sin(i * 2.1));
+    const px = x + Math.cos(angle) * r;
+    const py = y + Math.sin(angle) * r;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  // Inner nucleus
+  ctx.fillStyle = '#ff0020';
+  ctx.beginPath();
+  ctx.arc(x, y, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // HP bar — always shown for immune units so player can see health at a glance
+  const barW = radius * 2.2;
+  const barH = 3;
+  const bx = x - radius * 1.1;
+  const by = y - radius - 7;
+  ctx.fillStyle = '#441111';
+  ctx.fillRect(bx, by, barW, barH);
+  ctx.fillStyle = '#ff4455';
+  ctx.fillRect(bx, by, barW * Math.max(0, entity.hp / entity.maxHp), barH);
+}
+
+/** Draw attack effects (projectile lines and melee flashes). */
+function drawAttackEffects(ctx: CanvasRenderingContext2D, effects: AttackEffect[]): void {
+  for (const fx of effects) {
+    const alpha = Math.max(0, fx.ttl / (fx.kind === 'projectile' ? 0.25 : 0.10));
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    if (fx.kind === 'projectile') {
+      // Spitter beam: bright acid line
+      ctx.strokeStyle = '#ccff00';
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = '#aaff00';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.moveTo(fx.from.x, fx.from.y);
+      ctx.lineTo(fx.to.x, fx.to.y);
+      ctx.stroke();
+      // Dot at impact point
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(fx.to.x, fx.to.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Melee flash: white ring at target
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.arc(fx.to.x, fx.to.y, 10 * (1 - alpha * 0.5), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+}
+
 /** Draw a single unit entity as a circle with a direction indicator. */
 function drawUnit(
   ctx: CanvasRenderingContext2D,
@@ -196,6 +301,8 @@ function drawEntity(
 ): void {
   if (entity.kind === 'base') {
     drawBase(ctx, entity, selected);
+  } else if (entity.kind === 'macrophage') {
+    drawMacrophage(ctx, entity, selected);
   } else {
     drawUnit(ctx, entity, selected);
   }
@@ -342,11 +449,16 @@ function drawMoveMarkers(ctx: CanvasRenderingContext2D, markers: MoveMarker[]): 
   for (const m of markers) {
     const alpha = Math.max(0, m.ttl / 0.5); // fade out over marker lifetime
     const r = 8 * (1 - alpha * 0.5);        // slightly shrinks as it fades
+    const color = m.isAttack ? '#ff4444' : '#ffffff';
 
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.strokeStyle = '#ffffff';
+    ctx.strokeStyle = color;
     ctx.lineWidth = 1.5;
+    if (m.isAttack) {
+      ctx.shadowColor = '#ff0000';
+      ctx.shadowBlur = 6;
+    }
     ctx.beginPath();
     ctx.arc(m.pos.x, m.pos.y, r, 0, Math.PI * 2);
     ctx.stroke();
@@ -434,6 +546,7 @@ export function render(
     drawEntity(ctx, entity, input.selected.has(entity.id));
   }
 
+  drawAttackEffects(ctx, attackEffects);
   drawDragBox(ctx, input);
   drawMoveMarkers(ctx, input.moveMarkers);
   drawHUD(ctx, world, input);

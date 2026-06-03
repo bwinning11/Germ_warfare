@@ -41,6 +41,8 @@ export interface MoveMarker {
   pos: Vec2;
   /** Remaining lifetime in seconds. */
   ttl: number;
+  /** True when this marker was spawned from an attack order (rendered red). */
+  isAttack?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -170,12 +172,12 @@ export function attachInput(
     state.dragBox = null;
   });
 
-  // --- Right-click: set rally (if base selected alone) or issue move command ---
+  // --- Right-click: set rally (if base selected alone), attack-command (if clicking enemy), or move ---
   canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     if (state.selected.size === 0) return;
 
-    const target = canvasPos(canvas, e);
+    const clickPos = canvasPos(canvas, e);
 
     // If the ONLY selected entity is the base, set the rally point
     const selectedEntities = world.entities.filter(
@@ -185,25 +187,43 @@ export function attachInput(
       selectedEntities.length === 1 && selectedEntities[0].kind === 'base';
 
     if (isBaseOnlySelection) {
-      world.rallyPoint = { ...target };
-      state.moveMarkers.push({ pos: { ...target }, ttl: MARKER_TTL });
+      world.rallyPoint = { ...clickPos };
+      state.moveMarkers.push({ pos: { ...clickPos }, ttl: MARKER_TTL });
       return;
     }
 
-    // Otherwise move selected units (exclude structures from movement)
+    // Check if the right-click landed on an enemy entity (hit radius 16)
+    const clickedEnemy = world.entities.find(
+      (en) => en.owner === 'immune' &&
+               Math.hypot(en.pos.x - clickPos.x, en.pos.y - clickPos.y) <= 16,
+    );
+
+    // Exclude structures from receiving move/attack commands
     const selectedUnits: Entity[] = selectedEntities.filter(
       (u) => u.kind !== 'base',
     );
     if (selectedUnits.length === 0) return;
 
-    // Assign formation targets
-    const targets = formationTargets(target, selectedUnits.length);
-    for (let i = 0; i < selectedUnits.length; i++) {
-      selectedUnits[i].data.moveTo = targets[i];
+    if (clickedEnemy) {
+      // Attack command — set attackTarget on all selected units, clear any moveTo
+      for (const unit of selectedUnits) {
+        unit.data.attackTarget = clickedEnemy.id;
+        unit.data.moveTo = null; // combat tick will set pursuit moveTo
+      }
+      // Red-tinted marker for attack order
+      state.moveMarkers.push({ pos: { ...clickPos }, ttl: MARKER_TTL, isAttack: true });
+    } else {
+      // Move command — clear any lingering attack target so units focus on the destination
+      for (const unit of selectedUnits) {
+        unit.data.attackTarget = undefined;
+      }
+      // Assign formation targets
+      const targets = formationTargets(clickPos, selectedUnits.length);
+      for (let i = 0; i < selectedUnits.length; i++) {
+        selectedUnits[i].data.moveTo = targets[i];
+      }
+      state.moveMarkers.push({ pos: { ...clickPos }, ttl: MARKER_TTL });
     }
-
-    // Brief visual marker
-    state.moveMarkers.push({ pos: { ...target }, ttl: MARKER_TTL });
   });
 }
 
