@@ -99,6 +99,17 @@ Alongside the loadout sit **player-set dials**. The headline is **Game Speed** �
 ### Control scheme
 **Active-pause, zone-command.** Touchstone: *They Are Billions*, theme inverted — you're the infection, the immune system is the escalating swarm. Real-time, but pause/slow anytime to assess and issue orders. You click zones and borders — push the front, plant a Biofilm, spawn/station a strain, breach a barrier, go dormant — never microing individual cells. Tension is decisions under rising Heat, not APM. TAB's signature cascade-failure is already in our Heat model: a strain caught bumps Heat, which can tip a threshold and cascade.
 
+### The network model (v2 — playtest-driven enrichment)
+*The minimal prototype's single-verb (expand-only) loop tested **too thin**: with nothing to trade against, Dormancy was a non-decision and the linear map gave no real choices. This deepens the dive into a **network/territory game**. Where it conflicts with the minimal descriptions above (global dormancy, all-owned-zones raise Heat, near-linear map), **this section governs.***
+
+- **Map = a graph, not a line.** Multiple **organ** nodes (each a vector/exit), **connective** zones, **pickup/special** nodes, **many routes** between them, and barrier-gated edges. Chokepoints, loops, and deep-but-rich nodes make topology a real decision.
+- **Chains + multiplier.** Owned nodes connected back to your **core** form a network that channels a **resource multiplier** — the larger your connected network, the more biomass per node. The immune system's signature threat becomes **severing** you: cut-off nodes still function and stay yours but drop the multiplier (base only). **Protecting your arteries is the strategic heart** — which is *why* defense matters.
+- **Defense (the second verb).** Spend biomass to hold ground: a **Brute** strain actively fights/absorbs responders in a node; a **Cyst** colony fortifies a node (harder to clear or sever). Defense is the alternative to going quiet — keep producing (hot) by investing in holding.
+- **Selective dormancy (per node).** Each owned node runs **hot** (produces, feeds the chain, raises Heat, draws immunity) or **dormant** (safe, idle, off the multiplier). Heat comes from your **hot** nodes — so going *selectively* dormant is a live spatial/economic lever (and how you weather a probe without abandoning a node), not a global pause.
+- **Pickups & relics in a dive.** **Pickups** sit in specific nodes — a biomass cache, a mutagen, a Heat-purge, a one-shot power — giving reasons to *route toward* particular (often hot/deep) nodes: risk vs. reward. **Relics** are the permanent evolutions you **bank on escape**; some pickups can be carried out as relics.
+
+Net — the dive's verbs become **expand · defend · run hot/dormant · route to pickups · escape**, against an immune system that probes, clears, *and severs*. Every choice a real tradeoff. (Exact multiplier formula, sever rules, and organ/path counts are prototype-tunable.)
+
 ---
 
 ## 5. The Geoscape — the world layer
@@ -185,6 +196,8 @@ All four eventually; the same strain/colony framework, retuned per class.
   - *Success criteria:* (1) the greed-vs-escape decision feels genuinely tense; (2) a new player can **read the Heat curve within ~2 dives** — the core skill is teachable, not punishing-by-surprise.
 
 **Step 1.5 — add adaptive immunity.** Before wrapping a world, layer in the adaptive/antibody system to test whether the dive is *strategically deep*, not merely satisfying — the other half of the dive bet.
+
+**Playtest update (v1 → v2 → enrich):** v1 was illegible and unfair; a fix pass (onboarding, start-paused, telegraphed Heat, loud feedback) made it legible (v2). v2 then exposed the deeper problem — the loop is **too thin** to be fun. So the **next prototype targets the enriched network dive** (§4 *network model*: chains/multiplier + a defense verb + selective dormancy), *then* adaptive immunity. See `docs/plans/2026-06-01-dive-prototype-findings.md`.
 
 **Step 2 — wrap it in a minimal world.** One class (Bacteria), a reduced map (~a dozen regions), auto-spread, humanity-as-clock, herd immunity, world-events, pop-up dives, the saturation-race win and herd-immunity loss. Winnable/losable in a single sitting.
   - *Success criterion:* the **expand / exploit / defend triage** is a genuinely hard recurring choice — that, not the Game Speed slider, is the geoscape's strategic depth.
