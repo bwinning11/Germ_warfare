@@ -6,6 +6,12 @@
 import { World, Entity, Vec2 } from './types';
 import { tickIncome } from './economy';
 import { tickCombat, removeDeadEntities, updateEffects } from './combat';
+import { createWaveState, tickWaves, tickImmunAI, WaveState } from './waves';
+
+// ---------------------------------------------------------------------------
+// Module-level wave state — lives alongside the world singleton
+// ---------------------------------------------------------------------------
+export let waveState: WaveState = createWaveState();
 
 /** Auto-incrementing id generator. */
 let _nextId = 1;
@@ -45,20 +51,6 @@ function makeUnit(pos: Vec2, moveTo: Vec2 | null = null): Entity {
     maxHp: 10,
     owner: 'you',
     data: { moveTo, speed: SPREADER_SPEED },
-  };
-}
-
-/** Spawn a placeholder immune macrophage at `pos`. */
-function makeMacrophage(pos: Vec2, hp = 60): Entity {
-  return {
-    id: nextId(),
-    kind: 'macrophage',
-    pos: { ...pos },
-    vel: { x: 0, y: 0 },
-    hp,
-    maxHp: hp,
-    owner: 'immune',
-    data: { moveTo: null, speed: 0, attackCooldownLeft: 0 },
   };
 }
 
@@ -105,19 +97,11 @@ export function createWorld(width: number, height: number): World {
     makeUnit({ x: baseX + o.x, y: baseY + o.y }),
   );
 
-  // Placeholder immune dummies — static macrophages scattered across the field.
-  // These are replaced by wave-spawning + AI in the next task.
-  const macrophages: Entity[] = [
-    makeMacrophage({ x: width * 0.45, y: height * 0.30 }, 60),
-    makeMacrophage({ x: width * 0.55, y: height * 0.50 }, 80),
-    makeMacrophage({ x: width * 0.45, y: height * 0.70 }, 60),
-    makeMacrophage({ x: width * 0.70, y: height * 0.25 }, 50),
-    makeMacrophage({ x: width * 0.70, y: height * 0.75 }, 50),
-    makeMacrophage({ x: width * 0.80, y: height * 0.50 }, 100),
-  ];
+  // Reset wave state for a fresh game
+  waveState = createWaveState();
 
   return {
-    entities: [base, ...units, ...macrophages],
+    entities: [base, ...units],
     width,
     height,
     elapsed: 0,
@@ -210,6 +194,10 @@ export function update(world: World, dt: number): World {
     e.pos.x = Math.max(0, Math.min(world.width, e.pos.x));
     e.pos.y = Math.max(0, Math.min(world.height, e.pos.y));
   }
+
+  // --- Immune waves + AI ---
+  tickWaves(world, waveState, dt);
+  tickImmunAI(world);
 
   // --- Combat ---
   tickCombat(world, dt);

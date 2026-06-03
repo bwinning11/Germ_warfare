@@ -28,8 +28,9 @@ export const COMBAT_DEFS: Record<string, CombatDef> = {
   spreader:  { damage: 4,  range: 28,  cooldown: 0.60 },
   brute:     { damage: 18, range: 32,  cooldown: 1.40 },
   spitter:   { damage: 9,  range: 180, cooldown: 1.10 },
-  // Macrophages also fight (passive counter-attack, used in next task for AI)
-  macrophage: { damage: 8, range: 30, cooldown: 1.20 },
+  // Immune enemies
+  macrophage:  { damage: 8,  range: 30, cooldown: 1.20 }, // slow tank
+  neutrophil:  { damage: 5,  range: 26, cooldown: 0.80 }, // fast harasser
 };
 
 // ---------------------------------------------------------------------------

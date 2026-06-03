@@ -7,6 +7,8 @@ import { InputState, MoveMarker } from '../input/input';
 import { normaliseRect } from '../world/selection';
 import { UNIT_DEFS } from '../world/economy';
 import { attackEffects, AttackEffect } from '../world/combat';
+import { WaveState, WAVE_INTERVAL } from '../world/waves';
+import { waveState } from '../world/world';
 
 const ENTITY_COLORS: Record<string, string> = {
   placeholder: '#44ff88',
@@ -15,6 +17,7 @@ const ENTITY_COLORS: Record<string, string> = {
   spitter:     '#ffcc22',
   base:        '#8866ff',
   macrophage:  '#ff4455',
+  neutrophil:  '#ff8800',
   antibody:    '#ffaacc',
   organ:       '#ffaa00',
 };
@@ -194,6 +197,61 @@ function drawMacrophage(
   ctx.fillRect(bx, by, barW * Math.max(0, entity.hp / entity.maxHp), barH);
 }
 
+/** Draw a neutrophil — fast immune harasser. */
+function drawNeutrophil(
+  ctx: CanvasRenderingContext2D,
+  entity: Entity,
+  selected: boolean,
+): void {
+  const { x, y } = entity.pos;
+  const radius = 9;
+  const color = ENTITY_COLORS.neutrophil;
+
+  if (selected) {
+    ctx.save();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, radius + 5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Outer glow — orange
+  const grd = ctx.createRadialGradient(x, y, 0, x, y, radius * 2.2);
+  grd.addColorStop(0, color + '55');
+  grd.addColorStop(1, 'transparent');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(x, y, radius * 2.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Body: diamond shape (4-pointed)
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#ffcc88';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x, y - radius);
+  ctx.lineTo(x + radius * 0.7, y);
+  ctx.lineTo(x, y + radius);
+  ctx.lineTo(x - radius * 0.7, y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  // HP bar — always shown
+  const barW = radius * 2;
+  const barH = 3;
+  const bx = x - radius;
+  const by = y - radius - 6;
+  ctx.fillStyle = '#442200';
+  ctx.fillRect(bx, by, barW, barH);
+  ctx.fillStyle = '#ff8800';
+  ctx.fillRect(bx, by, barW * Math.max(0, entity.hp / entity.maxHp), barH);
+}
+
 /** Draw attack effects (projectile lines and melee flashes). */
 function drawAttackEffects(ctx: CanvasRenderingContext2D, effects: AttackEffect[]): void {
   for (const fx of effects) {
@@ -303,6 +361,8 @@ function drawEntity(
     drawBase(ctx, entity, selected);
   } else if (entity.kind === 'macrophage') {
     drawMacrophage(ctx, entity, selected);
+  } else if (entity.kind === 'neutrophil') {
+    drawNeutrophil(ctx, entity, selected);
   } else {
     drawUnit(ctx, entity, selected);
   }
@@ -484,6 +544,40 @@ function drawPauseOverlay(ctx: CanvasRenderingContext2D, width: number, height: 
   ctx.fillText('PAUSED', width / 2, height / 2);
 }
 
+/** Wave indicator — wave number + "incoming" flash when a wave just spawned. */
+function drawWaveHUD(
+  ctx: CanvasRenderingContext2D,
+  world: World,
+  ws: WaveState,
+): void {
+  const x = world.width / 2;
+  const y = 14;
+
+  // Wave number label
+  ctx.font = 'bold 13px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+
+  const nextWaveIn = Math.max(0, WAVE_INTERVAL - ws.timer);
+  const waveLabel = ws.waveNumber === 0
+    ? `WAVE 1 IN  ${nextWaveIn.toFixed(0)}s`
+    : `WAVE ${ws.waveNumber}  |  next in ${nextWaveIn.toFixed(0)}s`;
+
+  ctx.fillStyle = '#cc4466';
+  ctx.fillText(waveLabel, x, y);
+
+  // "WAVE INCOMING" flash — show for 2s after spawn
+  if (ws.waveJustSpawned) {
+    ctx.save();
+    ctx.font = 'bold 22px monospace';
+    ctx.fillStyle = '#ff2244';
+    ctx.shadowColor = '#ff0000';
+    ctx.shadowBlur = 20;
+    ctx.fillText(`⚠ WAVE ${ws.waveNumber} INCOMING`, x, world.height / 2 - 60);
+    ctx.restore();
+  }
+}
+
 /** HUD — biomass, elapsed time, entity count, selection count. */
 function drawHUD(
   ctx: CanvasRenderingContext2D,
@@ -550,6 +644,7 @@ export function render(
   drawDragBox(ctx, input);
   drawMoveMarkers(ctx, input.moveMarkers);
   drawHUD(ctx, world, input);
+  drawWaveHUD(ctx, world, waveState);
   drawProductionPanel(ctx, world, input);
 
   if (world.paused) {

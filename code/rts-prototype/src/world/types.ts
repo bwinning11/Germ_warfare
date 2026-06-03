@@ -16,7 +16,8 @@ export type EntityKind =
   | 'brute'         // player germ unit (future)
   | 'spitter'       // player germ unit (future)
   | 'base'          // player production structure (future)
-  | 'macrophage'    // immune enemy (future)
+  | 'macrophage'    // immune enemy — tank, slower
+  | 'neutrophil'    // immune enemy — fast harasser (wave 3+)
   | 'antibody'      // immune projectile (future)
   | 'organ';        // capture objective (future)
 
