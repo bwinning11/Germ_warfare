@@ -37,9 +37,9 @@ export interface CombatDef {
  */
 export const COMBAT_DEFS: Record<string, CombatDef> = {
   // Player germs
-  spreader:  { damage: 4,  range: 28,  cooldown: 0.60 },
-  brute:     { damage: 18, range: 32,  cooldown: 1.40 },
-  spitter:   { damage: 9,  range: 180, cooldown: 1.10 },
+  spreader:  { damage: 5,  range: 28,  cooldown: 0.60 },
+  brute:     { damage: 20, range: 32,  cooldown: 1.40 },
+  spitter:   { damage: 10, range: 180, cooldown: 1.10 },
   // Innate tier (lighter, generic roamers)
   macrophage:     { damage: 8,  range: 30, cooldown: 1.20 }, // slow tank
   neutrophil:     { damage: 5,  range: 26, cooldown: 0.80 }, // fast harasser

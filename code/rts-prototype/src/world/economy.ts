@@ -32,9 +32,9 @@ export interface UnitDef {
  * | spitter  |  40  |  35 |   95  | ranged attacker (T4)  |
  */
 export const UNIT_DEFS: Record<'spreader' | 'brute' | 'spitter', UnitDef> = {
-  spreader: { cost: 20, hp: 15,  speed: 130, damage: 4,  range: 28,  cooldown: 0.60 },
-  brute:    { cost: 60, hp: 80,  speed: 65,  damage: 18, range: 32,  cooldown: 1.40 },
-  spitter:  { cost: 40, hp: 35,  speed: 95,  damage: 9,  range: 180, cooldown: 1.10 },
+  spreader: { cost: 20, hp: 18,  speed: 130, damage: 5,  range: 28,  cooldown: 0.60 },
+  brute:    { cost: 60, hp: 90,  speed: 65,  damage: 20, range: 32,  cooldown: 1.40 },
+  spitter:  { cost: 40, hp: 38,  speed: 95,  damage: 10, range: 180, cooldown: 1.10 },
 };
 
 // ---------------------------------------------------------------------------
@@ -42,7 +42,7 @@ export const UNIT_DEFS: Record<'spreader' | 'brute' | 'spitter', UnitDef> = {
 // ---------------------------------------------------------------------------
 
 /** Biomass generated per second (passive trickle). */
-export const INCOME_RATE = 12; // biomass/s
+export const INCOME_RATE = 20; // biomass/s — sustains a visibly growing tide
 
 /**
  * Advance the economy by `dt` seconds.

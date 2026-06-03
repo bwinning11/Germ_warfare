@@ -73,4 +73,26 @@ function loop(timestamp: number): void {
   requestAnimationFrame(loop);
 }
 
+// Dev-only introspection / fast-forward hook (playtesting + tuning).
+// Stripped from production builds by the import.meta.env.DEV guard.
+// (import.meta.env is cast here because this tsconfig scopes `types` to
+//  vitest/globals and omits vite/client's ambient ImportMeta augmentation.)
+const __DEV__ = (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV ?? false;
+if (__DEV__) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window as any).__game = {
+    world,
+    input: inputState,
+    /** Run N fixed sim steps headlessly — fast-forward for testing balance. */
+    step(seconds: number): void {
+      const n = Math.round(seconds / FIXED_DT);
+      for (let i = 0; i < n; i++) update(world, FIXED_DT);
+    },
+    /** Force one render (rAF is throttled when the tab is in the background). */
+    draw(): void {
+      render(ctx, world, inputState);
+    },
+  };
+}
+
 requestAnimationFrame(loop);

@@ -25,7 +25,7 @@ import { BODY_MAP, computeWaypoints } from './map';
 // ---------------------------------------------------------------------------
 
 /** Number of innate scouts kept alive at all times. */
-export const INNATE_POOL_SIZE = 4;
+export const INNATE_POOL_SIZE = 3;
 
 /** Radius (px) within which an innate scout will lock onto a player unit. */
 export const INNATE_PATROL_RADIUS = 260;
@@ -34,19 +34,23 @@ export const INNATE_PATROL_RADIUS = 260;
 export const INNATE_WANDER_INTERVAL = 6;
 
 /** Seconds between adaptive pushes. */
-export const ADAPTIVE_PUSH_INTERVAL = 30;
+export const ADAPTIVE_PUSH_INTERVAL = 42; // later first push — doesn't stack onto the early waves
 
 /** Threat points added per second of elapsed time. */
 export const ADAPTIVE_THREAT_PER_SECOND = 1;
 
-/** Threat points added per player combat unit on the field. */
-export const ADAPTIVE_THREAT_PER_UNIT = 2;
+/**
+ * Threat points added per player combat unit on the field.
+ * Kept low (1) so building a swarm — the player's only path to winning — does
+ * not summon an overwhelming counter-push (a "tall poppy" death spiral).
+ */
+export const ADAPTIVE_THREAT_PER_UNIT = 1;
 
 /** Base adaptive push size (units per push at 0 threat). */
-const ADAPTIVE_BASE_SIZE = 3;
+const ADAPTIVE_BASE_SIZE = 2;
 
 /** Extra units per 10 threat points. */
-const ADAPTIVE_SIZE_PER_10_THREAT = 2;
+const ADAPTIVE_SIZE_PER_10_THREAT = 1;
 
 /** Fraction of a push that will be the counter unit type. */
 const COUNTER_UNIT_FRACTION = 0.5;
@@ -55,24 +59,24 @@ const COUNTER_UNIT_FRACTION = 0.5;
 // Innate unit stats
 // ---------------------------------------------------------------------------
 
-const INNATE_MACROPHAGE_HP    = 45;
+const INNATE_MACROPHAGE_HP    = 38;
 const INNATE_MACROPHAGE_SPEED = 70;  // px/s — deliberate roamer
 
-const INNATE_NEUTROPHIL_HP    = 22;
+const INNATE_NEUTROPHIL_HP    = 20;
 const INNATE_NEUTROPHIL_SPEED = 110; // px/s — fast scout
 
 // Adaptive unit stats — heavier than innate
-const ADAPTIVE_MACROPHAGE_HP    = 90;
+const ADAPTIVE_MACROPHAGE_HP    = 78;
 const ADAPTIVE_MACROPHAGE_SPEED = 55;
 
-const NK_CELL_HP    = 75;           // counters brute
+const NK_CELL_HP    = 68;           // counters brute
 const NK_CELL_SPEED = 65;
 
-const T_CELL_HP    = 55;            // counters spitter
+const T_CELL_HP    = 50;            // counters spitter
 const T_CELL_SPEED = 80;
 
 // Dendritic cell — ADAPTIVE anti-swarm (counters Spreader)
-const DENDRITIC_CELL_HP    = 35;
+const DENDRITIC_CELL_HP    = 32;
 const DENDRITIC_CELL_SPEED = 105;
 
 // ---------------------------------------------------------------------------
@@ -487,7 +491,10 @@ function _spawnAdaptivePush(world: World, as: AdaptiveState, threatFraction: num
   // Update memory — what's the player building now?
   as.dominantKind = getMostUsedKind(world);
 
-  const totalSize = adaptivePushSize(threatFraction) + (as.pushCount - 1);
+  // Escalate with push count, but cap the bonus so late pushes don't snowball
+  // into an unbeatable wall the moment the player commits a big army forward.
+  const escalation = Math.min(3, as.pushCount - 1);
+  const totalSize = adaptivePushSize(threatFraction) + escalation;
   const counterCount = as.dominantKind
     ? Math.max(1, Math.round(totalSize * COUNTER_UNIT_FRACTION))
     : 0;

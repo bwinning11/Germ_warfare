@@ -69,7 +69,7 @@ function makeUnit(pos: Vec2, moveTo: Vec2 | null = null): Entity {
 }
 
 /** Base hit points. High enough to survive early waves if defended; falls if ignored. */
-export const BASE_HP = 320;
+export const BASE_HP = 420;
 
 /** Spawn the player's base at `pos`. */
 function makeBase(pos: Vec2): Entity {
@@ -119,9 +119,15 @@ export function createWorld(width: number, height: number): World {
     { x: 85,  y:  spacing },
   ];
 
-  const units: Entity[] = offsets.map((o) =>
-    makeUnit({ x: baseX + o.x, y: baseY + o.y }),
-  );
+  // Starting germs rally forward to the JCT-W staging point so the tide is in
+  // motion from the first second (a static cluster at base reads as "broken").
+  const units: Entity[] = offsets.map((o) => {
+    const spawn = { x: baseX + o.x, y: baseY + o.y };
+    const u = makeUnit(spawn, { ...rallyPoint });
+    u.data.waypoints = computeWaypoints(spawn, rallyPoint);
+    u.data._waypointDest = { ...rallyPoint };
+    return u;
+  });
 
   // Reset wave state and two-tier immune state for a fresh game
   waveState = createWaveState();
@@ -139,7 +145,7 @@ export function createWorld(width: number, height: number): World {
     // Start paused under the onboarding overlay — the sim does not run until
     // the player clicks BEGIN (no time pressure while reading the tutorial).
     paused: true,
-    biomass: 60,          // starting resource — enough for a couple of units up front
+    biomass: 80,          // starting resource — enough for a couple of units up front
     rallyPoint,
     gameState: 'onboarding',
     captureProgress: 0,

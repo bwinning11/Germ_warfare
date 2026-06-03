@@ -5,26 +5,37 @@
 
 import { World, Entity, Vec2 } from './types';
 import { BODY_MAP, computeWaypoints } from './map';
+import { findOrgan, CAPTURE_RADIUS } from './capture';
+
+/**
+ * Radius around the organ within which a *nearby* immune unit will peel off to
+ * defend the organ (engage a player unit that is actually on the capture point)
+ * instead of marching on the base. Deliberately small and only triggered by
+ * units already on the capture point, so it makes the organ *contested* (a tiny
+ * rush can't stroll onto an undefended gland) without becoming an unbeatable
+ * wall — a committed push that clears the defenders still wins the hold.
+ */
+const ORGAN_DEFENSE_RADIUS = 120; // px
 
 // ---------------------------------------------------------------------------
 // Tunable constants — adjust these to change wave feel
 // ---------------------------------------------------------------------------
 
 /** Seconds between wave arrivals. */
-export const WAVE_INTERVAL = 20;          // seconds — enough to build a starting force, soon enough that waves contest the organ
+export const WAVE_INTERVAL = 30;          // seconds — room to build + capture + commit a push before the next wave
 
 /** How many immune units spawn in wave 1. */
-export const WAVE_BASE_SIZE = 4;
+export const WAVE_BASE_SIZE = 3;          // gentle opener — beatable by the starting swarm
 
 /** Additional units added per subsequent wave. */
-export const WAVE_SIZE_INCREMENT = 2;
+export const WAVE_SIZE_INCREMENT = 1;     // gradual escalation — late waves don't spike into a wall
 
 /** Macrophage stats. */
-const MACROPHAGE_HP     = 60;
+const MACROPHAGE_HP     = 42;  // softened so a spreader pack can out-trade a wave
 const MACROPHAGE_SPEED  = 55;  // px/s — deliberate and menacing
 
 /** Neutrophil stats — faster, lighter. */
-const NEUTROPHIL_HP     = 30;
+const NEUTROPHIL_HP     = 24;
 const NEUTROPHIL_SPEED  = 95;  // px/s — quick harasser
 
 // ---------------------------------------------------------------------------
@@ -141,6 +152,26 @@ export function immuneTargetFor(immune: Entity, world: World): Entity | null {
     if (d < nearestUnitDist) {
       nearestUnit = e;
       nearestUnitDist = d;
+    }
+  }
+
+  // --- Organ defense: if this immune unit is near the organ AND player units
+  // are contesting it, hold the line here instead of marching on the base.
+  // This makes the organ a position the player must FIGHT THROUGH, not slip past.
+  const organ = findOrgan(world);
+  if (organ) {
+    const immuneToOrgan = Math.hypot(immune.pos.x - organ.pos.x, immune.pos.y - organ.pos.y);
+    if (immuneToOrgan <= ORGAN_DEFENSE_RADIUS) {
+      let defender: Entity | null = null;
+      let defenderDist = Infinity;
+      for (const e of world.entities) {
+        if (e.owner !== 'you' || e.kind === 'base') continue;
+        const dOrgan = Math.hypot(e.pos.x - organ.pos.x, e.pos.y - organ.pos.y);
+        if (dOrgan > CAPTURE_RADIUS) continue; // only defend against units actually on the organ
+        const dMe = Math.hypot(e.pos.x - immune.pos.x, e.pos.y - immune.pos.y);
+        if (dMe < defenderDist) { defender = e; defenderDist = dMe; }
+      }
+      if (defender) return defender;
     }
   }
 

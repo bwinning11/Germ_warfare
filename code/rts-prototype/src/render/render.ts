@@ -12,7 +12,12 @@ import { waveState, adaptiveState } from '../world/world';
 import { ADAPTIVE_PUSH_INTERVAL } from '../world/immune';
 import { CAPTURE_TIME, CAPTURE_RADIUS, findOrgan } from '../world/capture';
 import { BODY_MAP } from '../world/map';
-import { POINT_CAPTURE_TIME, FORTRESS_BUFF_RADIUS } from '../world/capturePoints';
+import {
+  POINT_CAPTURE_TIME,
+  FORTRESS_BUFF_RADIUS,
+  NUTRIENT_INCOME_BONUS,
+  FORTRESS_DAMAGE_MULT,
+} from '../world/capturePoints';
 
 const ENTITY_COLORS: Record<string, string> = {
   placeholder: '#44ff88',
@@ -1242,45 +1247,86 @@ function drawOnboarding(ctx: CanvasRenderingContext2D, width: number, height: nu
 
   const cx = width / 2;
   ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
 
   // Title
   ctx.fillStyle = '#7CFF9B';
   ctx.font = 'bold 34px monospace';
-  ctx.textBaseline = 'top';
-  ctx.fillText('GERM WARFARE', cx, height * 0.10);
+  ctx.fillText('GERM WARFARE', cx, 40);
 
   ctx.fillStyle = '#cfe8d8';
   ctx.font = '15px monospace';
-  ctx.fillText('You are an INFECTION inside a body. The immune system wants you dead.', cx, height * 0.10 + 44);
+  ctx.fillText('You are an INFECTION inside a body. Flow through its vessels and take the organ.', cx, 84);
 
-  // Core loop — the headline
+  // ---- THE LOOP — lead with the core gameplay arc -----------------------
+  let y = 124;
+  ctx.fillStyle = '#ffe08a';
+  ctx.font = 'bold 17px monospace';
+  ctx.fillText('THE LOOP', cx, y);
+  y += 28;
+
   const loop: string[] = [
-    'THE LOOP:',
-    '1.  SET your production mix  —  click BASE, then press  Q / W / E  to weight each germ type',
-    '2.  The base AUTO-BUILDS a continuous tide — you command, not click-spam',
-    '3.  COMMAND your swarm  —  click/drag to select · right-click to move or attack',
-    '4.  DEFEND base from immune WAVES  ·  PUSH to the ORGAN and HOLD it to win',
+    '1.  SET your production mix — click BASE, press Q / W / E to weight each germ',
+    '2.  Your germs AUTO-BUILD and FLOW through the vessels toward the front',
+    '3.  CAPTURE the points for advantages — hold a unit on each to take it:',
+    '4.  HOLD the chokepoints, then PUSH to the ORGAN and hold it to WIN',
   ];
   ctx.font = '15px monospace';
-  let y = height * 0.30;
+  ctx.fillStyle = '#e6f3ec';
   for (const line of loop) {
-    const isHeader = line.endsWith(':');
-    ctx.fillStyle = isHeader ? '#ffe08a' : '#e6f3ec';
-    ctx.font = isHeader ? 'bold 16px monospace' : '15px monospace';
     ctx.fillText(line, cx, y);
-    y += isHeader ? 30 : 26;
+    y += 25;
   }
 
+  // Capture-point benefits — the heart of map control, taught explicitly.
+  y += 4;
+  const cpY = y;
+  ctx.font = 'bold 13px monospace';
+  const seg = [
+    { t: '$ NUTRIENT = +income', c: CP_COLORS.nutrient_node },
+    { t: '+ COLONY = forward spawn', c: CP_COLORS.forward_colony },
+    { t: '* FORTRESS = +combat dmg', c: CP_COLORS.choke_fortress },
+  ];
+  // Lay the three benefit chips out centred on one line.
+  const sep = '     ';
+  let totalW = 0;
+  for (let i = 0; i < seg.length; i++) {
+    totalW += ctx.measureText(seg[i].t).width;
+    if (i < seg.length - 1) totalW += ctx.measureText(sep).width;
+  }
+  ctx.textAlign = 'left';
+  let sx = cx - totalW / 2;
+  for (let i = 0; i < seg.length; i++) {
+    ctx.fillStyle = seg[i].c;
+    ctx.fillText(seg[i].t, sx, cpY);
+    sx += ctx.measureText(seg[i].t).width;
+    if (i < seg.length - 1) {
+      ctx.fillStyle = '#5a6a60';
+      ctx.fillText(sep, sx, cpY);
+      sx += ctx.measureText(sep).width;
+    }
+  }
+  ctx.textAlign = 'center';
+  y += 34;
+
+  // Controls + threat reminder
+  ctx.font = '14px monospace';
+  ctx.fillStyle = '#bcd8c8';
+  ctx.fillText('COMMAND: click / drag to select · right-click to move or attack', cx, y);
+  y += 24;
+  ctx.fillStyle = '#ffb0b0';
+  ctx.fillText('DEFEND: immune waves come DOWN THE VESSELS from the organ side — guard your base.', cx, y);
+  y += 30;
+
   // Win / lose one-liners
-  y += 10;
   ctx.font = 'bold 15px monospace';
   ctx.fillStyle = '#7CFF9B';
   ctx.fillText('WIN: hold the ORGAN long enough to take the vector.', cx, y);
   ctx.fillStyle = '#ff6b6b';
-  ctx.fillText('LOSE: your BASE is destroyed.', cx, y + 26);
+  ctx.fillText('LOSE: your BASE is destroyed.', cx, y + 24);
 
   // Begin button
-  drawButton(ctx, overlayButtonRect(width, height), '▶ BEGIN', '#7CFF9B');
+  drawButton(ctx, overlayButtonRect(width, height), 'BEGIN', '#7CFF9B');
 
   ctx.fillStyle = '#8fae9c';
   ctx.font = '12px monospace';
@@ -1353,118 +1399,222 @@ function drawStatBar(
 }
 
 /**
- * Top HUD bar — the player's at-a-glance dashboard.
- * Left → right: base health, biomass, your-unit count, wave + next-wave timer,
- * and organ capture progress. Everything pinned to the top edge so nothing clips.
+ * Top HUD bar — the player's at-a-glance dashboard (two rows).
+ *
+ * Row 1 (resources + threat): base HP · biomass · germ count · production mix ·
+ *        innate wave timer · adaptive threat · organ-capture %.
+ * Row 2 (MAP CONTROL): one chip per capturable point (nutrient / colony /
+ *        fortress) showing who holds it and its concrete benefit. This answers
+ *        "what do I hold and what is it doing for me?" at a glance.
+ *
+ * The whole bar is laid out to FIT inside world.width with no clipping — box
+ * widths are computed from the usable width so the rightmost box ends inside
+ * the right edge regardless of canvas size.
  */
 function drawHUD(
   ctx: CanvasRenderingContext2D,
   world: World,
   ws: WaveState,
 ): void {
+  const pad = 8;       // left/right margin
   const top = 8;
-  const h = 22;
-  let x = 10;
+  const h = 22;        // row height
+  const gap = 6;       // gap between boxes
+  const row2 = top + h + 6; // second row y
 
-  // Translucent strip behind the whole HUD for legibility over the arena
+  // Translucent strip behind the whole two-row HUD for legibility over the arena
   ctx.save();
-  ctx.fillStyle = 'rgba(6, 14, 9, 0.55)';
-  ctx.fillRect(0, 0, world.width, top + h + 8);
+  ctx.fillStyle = 'rgba(6, 14, 9, 0.62)';
+  ctx.fillRect(0, 0, world.width, row2 + h + 8);
   ctx.restore();
 
-  // --- Base health ---
+  // ---- ROW 1: resources + threat -----------------------------------------
+  const usable = world.width - pad * 2;
+  let x = pad;
+
   const base = world.entities.find((e) => e.kind === 'base' && e.owner === 'you');
   const baseFrac = base ? base.hp / base.maxHp : 0;
   const baseHp = base ? Math.ceil(base.hp) : 0;
   const baseMax = base ? base.maxHp : 0;
   const baseColor = baseFrac > 0.5 ? '#aa66ff' : baseFrac > 0.25 ? '#ffaa33' : '#ff4444';
-  drawStatBar(ctx, x, top, 168, h, baseFrac, baseColor, '#8866ff',
-    `BASE HP  ${baseHp}/${baseMax}`);
-  x += 168 + 8;
 
-  // --- Biomass ---
-  drawStatBar(ctx, x, top, 150, h, Math.min(world.biomass / 200, 1), '#33bb33', '#44aa44',
-    `BIOMASS  ${Math.floor(world.biomass)}`);
-  x += 150 + 8;
-
-  // --- Your unit count (mobile 'you' units, excluding base) ---
   const unitCount = world.entities.filter(
     (e) => e.owner === 'you' && e.kind !== 'base',
   ).length;
-  ctx.fillStyle = 'rgba(10, 8, 20, 0.78)';
-  ctx.strokeStyle = '#33ccff';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.roundRect(x, top, 110, h, 3);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = '#aef0ff';
-  ctx.font = 'bold 11px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(`GERMS  ${unitCount}`, x + 55, top + h / 2);
-  x += 110 + 8;
 
-  // --- Production mix indicator ---
-  {
-    const mix = world.productionMix;
-    const total = mix.spreader + mix.brute + mix.spitter;
-    const mixLabel = total === 0
-      ? 'MIX: OFF'
-      : `MIX S${mix.spreader} B${mix.brute} P${mix.spitter}`;
-    const mixActive = total > 0;
-    ctx.fillStyle = 'rgba(10, 8, 20, 0.78)';
-    ctx.strokeStyle = mixActive ? '#8866ff' : '#553355';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.roundRect(x, top, 122, h, 3);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = mixActive ? '#ccaaff' : '#554466';
-    ctx.font = 'bold 11px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(mixLabel, x + 61, top + h / 2);
-    x += 122 + 8;
-  }
+  const mix = world.productionMix;
+  const mixTotal = mix.spreader + mix.brute + mix.spitter;
+  const mixLabel = mixTotal === 0 ? 'MIX: OFF' : `MIX S${mix.spreader} B${mix.brute} P${mix.spitter}`;
+  const mixActive = mixTotal > 0;
 
-  // --- Innate wave timer (legacy wave system = innate cadence) ---
   const nextWaveIn = Math.max(0, WAVE_INTERVAL - ws.timer);
   const waveLabel = ws.waveNumber === 0
     ? `INNATE in ${nextWaveIn.toFixed(0)}s`
-    : `INNATE #${ws.waveNumber}  next ${nextWaveIn.toFixed(0)}s`;
-  const waveW = 168;
-  ctx.fillStyle = 'rgba(20, 6, 10, 0.8)';
-  ctx.strokeStyle = '#cc4466';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.roundRect(x, top, waveW, h, 3);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = '#ff8095';
-  ctx.font = 'bold 11px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(waveLabel, x + waveW / 2, top + h / 2);
-  x += waveW + 8;
+    : `INNATE #${ws.waveNumber}  ${nextWaveIn.toFixed(0)}s`;
 
-  // --- Adaptive threat / immune-response indicator ---
   const THREAT_REFERENCE = 100;
   const threatFrac = Math.min(1, (world.threatLevel ?? 0) / THREAT_REFERENCE);
   const nextPushIn = Math.max(0, ADAPTIVE_PUSH_INTERVAL - adaptiveState.timer);
   const threatColor = threatFrac < 0.4 ? '#ff8800' : threatFrac < 0.7 ? '#ff4400' : '#ff0022';
-  drawStatBar(
-    ctx, x, top, 188, h,
-    threatFrac, threatColor, '#881122',
-    `ADAPTIVE ${Math.round(threatFrac * 100)}%  push ${nextPushIn.toFixed(0)}s`,
-  );
-  x += 188 + 8;
 
-  // --- Organ capture progress ---
   const capFrac = Math.min(1, world.captureProgress / CAPTURE_TIME);
   const capColor = world.organContested ? '#ff5566' : '#55ff66';
-  drawStatBar(ctx, x, top, 188, h, capFrac, capColor, '#ffaa00',
-    `ORGAN  ${Math.floor(capFrac * 100)}%${world.organContested ? ' (contested)' : ''}`);
+
+  // Seven boxes, sized by weight to fit `usable - 6*gap` exactly (no overflow).
+  const weights = [0.155, 0.13, 0.10, 0.115, 0.155, 0.165, 0.18];
+  const wsum = weights.reduce((a, b) => a + b, 0);
+  const innerW = usable - gap * (weights.length - 1);
+  const boxW = weights.map((wt) => Math.floor((wt / wsum) * innerW));
+
+  // 1 · Base HP
+  drawStatBar(ctx, x, top, boxW[0], h, baseFrac, baseColor, '#8866ff',
+    `BASE ${baseHp}/${baseMax}`);
+  x += boxW[0] + gap;
+
+  // 2 · Biomass
+  drawStatBar(ctx, x, top, boxW[1], h, Math.min(world.biomass / 200, 1), '#33bb33', '#44aa44',
+    `BIOMASS ${Math.floor(world.biomass)}`);
+  x += boxW[1] + gap;
+
+  // 3 · Germ count
+  drawLabelBox(ctx, x, top, boxW[2], h, `GERMS ${unitCount}`, '#33ccff', '#aef0ff');
+  x += boxW[2] + gap;
+
+  // 4 · Production mix
+  drawLabelBox(ctx, x, top, boxW[3], h, mixLabel,
+    mixActive ? '#8866ff' : '#553355', mixActive ? '#ccaaff' : '#7a6a8a');
+  x += boxW[3] + gap;
+
+  // 5 · Innate wave timer
+  drawLabelBox(ctx, x, top, boxW[4], h, waveLabel, '#cc4466', '#ff8095');
+  x += boxW[4] + gap;
+
+  // 6 · Adaptive threat
+  drawStatBar(ctx, x, top, boxW[5], h, threatFrac, threatColor, '#881122',
+    `ADAPTIVE ${Math.round(threatFrac * 100)}% ${nextPushIn.toFixed(0)}s`);
+  x += boxW[5] + gap;
+
+  // 7 · Organ capture
+  drawStatBar(ctx, x, top, boxW[6], h, capFrac, capColor, '#ffaa00',
+    `ORGAN ${Math.floor(capFrac * 100)}%${world.organContested ? ' !' : ''}`);
+
+  // ---- ROW 2: MAP CONTROL -------------------------------------------------
+  drawMapControlRow(ctx, world, pad, row2, h, gap, usable);
+}
+
+/** A plain bordered label box (no fill bar) — for discrete readouts. */
+function drawLabelBox(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number,
+  label: string, border: string, textColor: string,
+): void {
+  ctx.fillStyle = 'rgba(10, 8, 20, 0.80)';
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 3);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = textColor;
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, x + w / 2, y + h / 2);
+}
+
+/**
+ * MAP CONTROL row — a leading tag plus three chips, one per capturable point.
+ * Each chip shows: icon symbol, name, who holds it, and the concrete benefit
+ * (active = bright + ✓; not-yours = dimmed). A capturing chip under-fills with
+ * its % progress so the player can see it being taken.
+ */
+function drawMapControlRow(
+  ctx: CanvasRenderingContext2D,
+  world: World,
+  pad: number,
+  y: number,
+  h: number,
+  gap: number,
+  usable: number,
+): void {
+  // Leading "MAP CONTROL" tag box
+  const tagW = 116;
+  ctx.fillStyle = 'rgba(8, 14, 10, 0.85)';
+  ctx.strokeStyle = '#3a6a48';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(pad, y, tagW, h, 3);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#9fe0b4';
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('MAP CONTROL', pad + tagW / 2, y + h / 2);
+
+  // Three chips fill the remaining width evenly.
+  const chipsX = pad + tagW + gap;
+  const chipsTotal = usable - tagW - gap;
+  const chipW = Math.floor((chipsTotal - gap * 2) / 3);
+
+  type ChipSpec = { kind: 'nutrient_node' | 'forward_colony' | 'choke_fortress'; sym: string; name: string; benefit: string; };
+  const specs: ChipSpec[] = [
+    { kind: 'nutrient_node',  sym: '$', name: 'NUTRIENT', benefit: `+${NUTRIENT_INCOME_BONUS}/s biomass` },
+    { kind: 'forward_colony', sym: '+', name: 'COLONY',   benefit: 'forward spawn' },
+    { kind: 'choke_fortress', sym: '*', name: 'FORTRESS', benefit: `${FORTRESS_DAMAGE_MULT}x dmg` },
+  ];
+
+  specs.forEach((spec, i) => {
+    const cx = chipsX + i * (chipW + gap);
+    const cp = (world.capturePoints ?? []).find((p) => p.kind === spec.kind);
+    const owned = cp?.owner === 'you';
+    const enemy = cp?.owner === 'immune';
+    const contested = cp?.contested ?? false;
+    const frac = cp ? Math.min(1, cp.captureProgress / POINT_CAPTURE_TIME) : 0;
+    const color = CP_COLORS[spec.kind] ?? '#ffffff';
+
+    // Chip background — bright bordered when held, dim otherwise; red when contested.
+    const border = contested ? '#ff5566' : owned ? color : enemy ? '#aa3344' : '#3a3a4a';
+    ctx.fillStyle = owned ? 'rgba(20,30,22,0.92)' : 'rgba(10,8,18,0.82)';
+    ctx.strokeStyle = border;
+    ctx.lineWidth = owned ? 1.8 : 1;
+    ctx.beginPath();
+    ctx.roundRect(cx, y, chipW, h, 3);
+    ctx.fill();
+    ctx.stroke();
+
+    // Capturing under-fill so chips read as "filling" toward yours.
+    if (!owned && frac > 0) {
+      ctx.save();
+      ctx.fillStyle = contested ? 'rgba(255,85,102,0.22)' : `${color}33`;
+      ctx.beginPath();
+      ctx.roundRect(cx + 1, y + 1, Math.max(0, (chipW - 2) * frac), h - 2, 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Symbol
+    ctx.fillStyle = owned ? color : enemy ? '#ff8090' : '#8a8aa0';
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(spec.sym, cx + 7, y + h / 2);
+
+    // Name + state
+    const stateTxt = contested ? 'CONTESTED'
+      : owned ? 'YOURS'
+      : enemy ? 'ENEMY'
+      : frac > 0 ? `${Math.floor(frac * 100)}%`
+      : 'NEUTRAL';
+    ctx.fillStyle = owned ? '#ffffff' : '#cfd6e0';
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText(`${spec.name} · ${stateTxt}`, cx + 20, y + h / 2 - 5);
+
+    // Benefit line (bright if active, dim if not held)
+    ctx.fillStyle = owned ? color : '#6a6a80';
+    ctx.font = '9px monospace';
+    ctx.fillText(spec.benefit + (owned ? '  ON' : ''), cx + 20, y + h / 2 + 6);
+  });
 }
 
 /** "INNATE WAVE INCOMING" flash when an innate wave just spawned. */
@@ -1515,12 +1665,15 @@ function drawLegend(ctx: CanvasRenderingContext2D, world: World): void {
   const rows: LegendRow[] = [
     { color: ENTITY_COLORS.base,    text: 'BASE — your home (protect!)' },
     { color: ENTITY_COLORS.organ,   text: 'ORGAN — hold to WIN' },
+    { color: CP_COLORS.nutrient_node,  header: '— CAPTURE POINTS (hold) —', text: '$ Nutrient · +income' },
+    { color: CP_COLORS.forward_colony, text: '+ Colony · spawn forward' },
+    { color: CP_COLORS.choke_fortress, text: '* Fortress · +dmg buff' },
     { color: ENTITY_COLORS.spreader, header: '— YOUR GERMS —', text: 'Spreader (Q) · fast swarm' },
     { color: ENTITY_COLORS.brute,   text: 'Brute (W) · heavy melee' },
     { color: ENTITY_COLORS.spitter, text: 'Spitter (E) · ranged acid' },
-    { color: ENTITY_COLORS.macrophage, header: '— INNATE (always roaming) —', text: 'Macrophage · slow tank' },
+    { color: ENTITY_COLORS.macrophage, header: '— IMMUNE: INNATE (roaming) —', text: 'Macrophage · slow tank' },
     { color: ENTITY_COLORS.neutrophil, text: 'Neutrophil · fast harasser' },
-    { color: ENTITY_COLORS.dendritic_cell, header: '— ADAPTIVE (escalating) —', text: 'Dendritic · vs Spreader' },
+    { color: ENTITY_COLORS.dendritic_cell, header: '— IMMUNE: ADAPTIVE (escalates) —', text: 'Dendritic · vs Spreader' },
     { color: ENTITY_COLORS.nk_cell, text: 'NK cell · vs Brute (heavy)' },
     { color: ENTITY_COLORS.t_cell,  text: 'T-cell · vs Spitter (ranged)' },
   ];
@@ -1621,10 +1774,15 @@ export function render(
   drawAttackEffects(ctx, attackEffects);
   drawDragBox(ctx, input);
   drawMoveMarkers(ctx, input.moveMarkers);
-  drawHUD(ctx, world, waveState);
-  drawWaveFlash(ctx, world, waveState);
-  drawProductionPanel(ctx, world, input);
-  drawLegend(ctx, world);
+
+  // Dashboard chrome is only meaningful once the match is live. Skipping it
+  // during onboarding keeps the tutorial overlay clean (no faint bleed-through).
+  if (world.gameState !== 'onboarding') {
+    drawHUD(ctx, world, waveState);
+    drawWaveFlash(ctx, world, waveState);
+    drawProductionPanel(ctx, world, input);
+    drawLegend(ctx, world);
+  }
 
   // --- Overlays (mutually exclusive by game state) ---
   if (world.gameState === 'onboarding') {
