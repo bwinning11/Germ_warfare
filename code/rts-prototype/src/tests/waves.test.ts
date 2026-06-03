@@ -38,6 +38,7 @@ function makeWorld(entities: Entity[], elapsed = 0): World {
     organContested: false,
     productionMix: { spreader: 1, brute: 1, spitter: 1 },
     buildAccumulator: 0,
+    threatLevel: 0,
   };
 }
 

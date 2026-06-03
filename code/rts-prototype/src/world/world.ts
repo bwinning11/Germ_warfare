@@ -8,11 +8,22 @@ import { tickIncome, autoBuildStep } from './economy';
 import { tickCombat, removeDeadEntities, updateEffects } from './combat';
 import { createWaveState, tickWaves, tickImmunAI, WaveState } from './waves';
 import { makeOrgan, tickCapture } from './capture';
+import {
+  createInnateState,
+  createAdaptiveState,
+  tickInnate,
+  tickAdaptive,
+  computeThreatLevel,
+  InnateState,
+  AdaptiveState,
+} from './immune';
 
 // ---------------------------------------------------------------------------
-// Module-level wave state — lives alongside the world singleton
+// Module-level immune state — lives alongside the world singleton
 // ---------------------------------------------------------------------------
 export let waveState: WaveState = createWaveState();
+export let innateState: InnateState = createInnateState();
+export let adaptiveState: AdaptiveState = createAdaptiveState();
 
 /** Auto-incrementing id generator. */
 let _nextId = 1;
@@ -105,8 +116,10 @@ export function createWorld(width: number, height: number): World {
     makeUnit({ x: baseX + o.x, y: baseY + o.y }),
   );
 
-  // Reset wave state for a fresh game
+  // Reset wave state and two-tier immune state for a fresh game
   waveState = createWaveState();
+  innateState = createInnateState();
+  adaptiveState = createAdaptiveState();
 
   // Default mix: all three types equally weighted (the player can adjust)
   const productionMix: ProductionMix = { spreader: 1, brute: 1, spitter: 1 };
@@ -126,6 +139,7 @@ export function createWorld(width: number, height: number): World {
     organContested: false,
     productionMix,
     buildAccumulator: 0,
+    threatLevel: 0,
   };
 }
 
@@ -145,6 +159,7 @@ export function resetWorld(world: World): void {
   world.organContested = fresh.organContested;
   world.productionMix = fresh.productionMix;
   world.buildAccumulator = fresh.buildAccumulator;
+  world.threatLevel = fresh.threatLevel;
 }
 
 // ---------------------------------------------------------------------------
@@ -236,8 +251,17 @@ export function update(world: World, dt: number): World {
     e.pos.y = Math.max(0, Math.min(world.height, e.pos.y));
   }
 
-  // --- Immune waves + AI ---
+  // --- Legacy wave spawner (now the adaptive tier) + innate scouts ---
   tickWaves(world, waveState, dt);
+  // Innate tier: roaming scouts from game start
+  tickInnate(world, innateState, dt);
+  // Adaptive tier: escalating targeted pushes
+  const threat = computeThreatLevel(world, adaptiveState);
+  world.threatLevel = threat;
+  const THREAT_MAX_REFERENCE = 100;
+  const threatFrac = Math.min(1, threat / THREAT_MAX_REFERENCE);
+  tickAdaptive(world, adaptiveState, dt, threatFrac);
+  // Immune AI (update moveTo for all immune units)
   tickImmunAI(world);
 
   // --- Combat ---

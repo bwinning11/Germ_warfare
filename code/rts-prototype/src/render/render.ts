@@ -8,7 +8,8 @@ import { normaliseRect } from '../world/selection';
 import { UNIT_DEFS } from '../world/economy';
 import { attackEffects, AttackEffect } from '../world/combat';
 import { WaveState, WAVE_INTERVAL } from '../world/waves';
-import { waveState } from '../world/world';
+import { waveState, adaptiveState } from '../world/world';
+import { ADAPTIVE_PUSH_INTERVAL } from '../world/immune';
 import { CAPTURE_TIME, CAPTURE_RADIUS, findOrgan } from '../world/capture';
 
 const ENTITY_COLORS: Record<string, string> = {
@@ -17,8 +18,12 @@ const ENTITY_COLORS: Record<string, string> = {
   brute:       '#ff6644',
   spitter:     '#ffcc22',
   base:        '#8866ff',
+  // Innate tier — warmer, lighter
   macrophage:  '#ff4455',
   neutrophil:  '#ff8800',
+  // Adaptive tier — colder, heavier
+  nk_cell:     '#cc00ff',   // deep violet — heavy counter to brute
+  t_cell:      '#00ccff',   // icy blue — ranged counter to spitter
   antibody:    '#ffaacc',
   organ:       '#ffaa00',
 };
@@ -451,6 +456,148 @@ function drawUnit(
   }
 }
 
+/** Draw an NK cell — adaptive heavy unit (counter to brute). */
+function drawNkCell(
+  ctx: CanvasRenderingContext2D,
+  entity: Entity,
+  selected: boolean,
+): void {
+  const { x, y } = entity.pos;
+  const radius = 17; // larger than innate units
+  const color = ENTITY_COLORS.nk_cell;
+
+  if (selected) {
+    ctx.save();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(x, y, radius + 6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Heavy glow
+  const grd = ctx.createRadialGradient(x, y, 0, x, y, radius * 2.5);
+  grd.addColorStop(0, color + '77');
+  grd.addColorStop(1, 'transparent');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(x, y, radius * 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Body: hexagon — heavy, structured
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#ee88ff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2;
+    const r = radius * (0.9 + 0.1 * Math.cos(i * 1.7));
+    const px = x + Math.cos(angle) * r;
+    const py = y + Math.sin(angle) * r;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  // Inner bright nucleus
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(x, y, 5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Label: ADPT tag to distinguish from innate
+  ctx.fillStyle = '#ddaaff';
+  ctx.font = 'bold 8px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('NK', x, y + radius + 2);
+
+  // HP bar
+  const barW = radius * 2.2;
+  const barH = 3;
+  const bx = x - radius * 1.1;
+  const by = y - radius - 8;
+  ctx.fillStyle = '#220033';
+  ctx.fillRect(bx, by, barW, barH);
+  ctx.fillStyle = color;
+  ctx.fillRect(bx, by, barW * Math.max(0, entity.hp / entity.maxHp), barH);
+}
+
+/** Draw a T-cell — adaptive ranged unit (counter to spitter). */
+function drawTCell(
+  ctx: CanvasRenderingContext2D,
+  entity: Entity,
+  selected: boolean,
+): void {
+  const { x, y } = entity.pos;
+  const radius = 14;
+  const color = ENTITY_COLORS.t_cell;
+
+  if (selected) {
+    ctx.save();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(x, y, radius + 5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Icy glow
+  const grd = ctx.createRadialGradient(x, y, 0, x, y, radius * 2.2);
+  grd.addColorStop(0, color + '66');
+  grd.addColorStop(1, 'transparent');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(x, y, radius * 2.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Body: elongated capsule (rectangle + circles) — ranged shape
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#88eeff';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  // 8-pointed star (ranged interceptor feel)
+  const spikes = 8;
+  for (let i = 0; i < spikes * 2; i++) {
+    const angle = (i / (spikes * 2)) * Math.PI * 2 - Math.PI / 2;
+    const r = i % 2 === 0 ? radius : radius * 0.55;
+    const px = x + Math.cos(angle) * r;
+    const py = y + Math.sin(angle) * r;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  // Label
+  ctx.fillStyle = '#aaeeff';
+  ctx.font = 'bold 8px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('TC', x, y + radius + 2);
+
+  // HP bar
+  const barW = radius * 2;
+  const barH = 3;
+  const bx = x - radius;
+  const by = y - radius - 7;
+  ctx.fillStyle = '#001133';
+  ctx.fillRect(bx, by, barW, barH);
+  ctx.fillStyle = color;
+  ctx.fillRect(bx, by, barW * Math.max(0, entity.hp / entity.maxHp), barH);
+}
+
 /** Draw a single entity, routing to the correct renderer by kind. */
 function drawEntity(
   ctx: CanvasRenderingContext2D,
@@ -465,6 +612,10 @@ function drawEntity(
     drawMacrophage(ctx, entity, selected);
   } else if (entity.kind === 'neutrophil') {
     drawNeutrophil(ctx, entity, selected);
+  } else if (entity.kind === 'nk_cell') {
+    drawNkCell(ctx, entity, selected);
+  } else if (entity.kind === 't_cell') {
+    drawTCell(ctx, entity, selected);
   } else {
     drawUnit(ctx, entity, selected);
   }
@@ -905,11 +1056,11 @@ function drawHUD(
     x += 122 + 8;
   }
 
-  // --- Wave + next-wave timer ---
+  // --- Innate wave timer (legacy wave system = innate cadence) ---
   const nextWaveIn = Math.max(0, WAVE_INTERVAL - ws.timer);
   const waveLabel = ws.waveNumber === 0
-    ? `WAVE 1 in ${nextWaveIn.toFixed(0)}s`
-    : `WAVE ${ws.waveNumber}  next ${nextWaveIn.toFixed(0)}s`;
+    ? `INNATE in ${nextWaveIn.toFixed(0)}s`
+    : `INNATE #${ws.waveNumber}  next ${nextWaveIn.toFixed(0)}s`;
   const waveW = 168;
   ctx.fillStyle = 'rgba(20, 6, 10, 0.8)';
   ctx.strokeStyle = '#cc4466';
@@ -925,6 +1076,18 @@ function drawHUD(
   ctx.fillText(waveLabel, x + waveW / 2, top + h / 2);
   x += waveW + 8;
 
+  // --- Adaptive threat / immune-response indicator ---
+  const THREAT_REFERENCE = 100;
+  const threatFrac = Math.min(1, (world.threatLevel ?? 0) / THREAT_REFERENCE);
+  const nextPushIn = Math.max(0, ADAPTIVE_PUSH_INTERVAL - adaptiveState.timer);
+  const threatColor = threatFrac < 0.4 ? '#ff8800' : threatFrac < 0.7 ? '#ff4400' : '#ff0022';
+  drawStatBar(
+    ctx, x, top, 188, h,
+    threatFrac, threatColor, '#881122',
+    `ADAPTIVE ${Math.round(threatFrac * 100)}%  push ${nextPushIn.toFixed(0)}s`,
+  );
+  x += 188 + 8;
+
   // --- Organ capture progress ---
   const capFrac = Math.min(1, world.captureProgress / CAPTURE_TIME);
   const capColor = world.organContested ? '#ff5566' : '#55ff66';
@@ -932,22 +1095,36 @@ function drawHUD(
     `ORGAN  ${Math.floor(capFrac * 100)}%${world.organContested ? ' (contested)' : ''}`);
 }
 
-/** "WAVE INCOMING" flash when a wave just spawned. */
+/** "INNATE WAVE INCOMING" flash when an innate wave just spawned. */
 function drawWaveFlash(
   ctx: CanvasRenderingContext2D,
   world: World,
   ws: WaveState,
 ): void {
-  if (!ws.waveJustSpawned) return;
-  ctx.save();
-  ctx.font = 'bold 22px monospace';
-  ctx.fillStyle = '#ff2244';
-  ctx.shadowColor = '#ff0000';
-  ctx.shadowBlur = 20;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(`WAVE ${ws.waveNumber} INCOMING`, world.width / 2, 70);
-  ctx.restore();
+  if (ws.waveJustSpawned) {
+    ctx.save();
+    ctx.font = 'bold 20px monospace';
+    ctx.fillStyle = '#ff8855';
+    ctx.shadowColor = '#ff4400';
+    ctx.shadowBlur = 14;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`INNATE SCOUTS — wave ${ws.waveNumber}`, world.width / 2, 70);
+    ctx.restore();
+  }
+
+  // Adaptive push flash — more alarming
+  if (adaptiveState.pushJustSpawned) {
+    ctx.save();
+    ctx.font = 'bold 24px monospace';
+    ctx.fillStyle = '#cc00ff';
+    ctx.shadowColor = '#aa00ff';
+    ctx.shadowBlur = 28;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`ADAPTIVE PUSH ${adaptiveState.pushCount} — body remembers you`, world.width / 2, 100);
+    ctx.restore();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -958,7 +1135,9 @@ function drawLegend(ctx: CanvasRenderingContext2D, world: World): void {
   const rows: Array<{ color: string; text: string }> = [
     { color: ENTITY_COLORS.base,       text: 'BASE — your home (defend it!)' },
     { color: ENTITY_COLORS.spreader,   text: 'YOUR GERMS (auto-produced)' },
-    { color: ENTITY_COLORS.macrophage, text: 'IMMUNE (waves attack you)' },
+    { color: ENTITY_COLORS.macrophage, text: 'INNATE scouts — fast, roaming' },
+    { color: ENTITY_COLORS.nk_cell,    text: 'ADAPTIVE push — heavy siege' },
+    { color: ENTITY_COLORS.t_cell,     text: 'ADAPTIVE T-cell — counters you' },
     { color: ENTITY_COLORS.organ,      text: 'ORGAN — hold it to WIN' },
   ];
 

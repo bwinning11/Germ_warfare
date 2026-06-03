@@ -16,8 +16,10 @@ export type EntityKind =
   | 'brute'         // player germ unit (future)
   | 'spitter'       // player germ unit (future)
   | 'base'          // player production structure (future)
-  | 'macrophage'    // immune enemy — tank, slower
-  | 'neutrophil'    // immune enemy — fast harasser (wave 3+)
+  | 'macrophage'    // immune enemy — tank, slower (innate + adaptive)
+  | 'neutrophil'    // immune enemy — fast harasser (innate scout + adaptive counter-spreader)
+  | 'nk_cell'       // adaptive immune — heavy hitter, counters brute
+  | 't_cell'        // adaptive immune — ranged interceptor, counters spitter
   | 'antibody'      // immune projectile (future)
   | 'organ';        // capture objective (future)
 
@@ -114,4 +116,10 @@ export interface World {
    * Managed by autoBuildStep — do not set directly.
    */
   buildAccumulator: number;
+  /**
+   * Current adaptive immune threat level (0..∞).
+   * Computed from elapsed time + player army size. Shown in the HUD.
+   * Higher = heavier adaptive pushes incoming.
+   */
+  threatLevel: number;
 }
