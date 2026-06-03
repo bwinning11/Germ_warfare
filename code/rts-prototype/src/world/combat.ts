@@ -18,22 +18,34 @@ export interface CombatDef {
 /**
  * Combat stats per unit kind.
  *
+ * PLAYER GERMS:
  * | Kind     | Damage | Range | Cooldown | Notes                      |
  * |----------|--------|-------|----------|----------------------------|
  * | spreader |    4   |  28   |  0.60 s  | melee swarm — fast attack  |
  * | brute    |   18   |  32   |  1.40 s  | melee tank — heavy hits    |
  * | spitter  |    9   | 180   |  1.10 s  | ranged — medium damage     |
+ *
+ * INNATE IMMUNE (always roaming, generic):
+ * | macrophage  |  8   |  30  |  1.20 s  | slow tank, first-responder |
+ * | neutrophil  |  5   |  26  |  0.80 s  | fast harasser, scout       |
+ *
+ * ADAPTIVE IMMUNE (escalating, counter-targeted):
+ * | dendritic_cell |  6  |  26  | 0.55 s  | anti-swarm; counters Spreader |
+ * | nk_cell        | 22  |  34  | 1.50 s  | heavy; counters Brute         |
+ * | t_cell         | 10  | 150  | 1.00 s  | ranged; counters Spitter       |
  */
 export const COMBAT_DEFS: Record<string, CombatDef> = {
+  // Player germs
   spreader:  { damage: 4,  range: 28,  cooldown: 0.60 },
   brute:     { damage: 18, range: 32,  cooldown: 1.40 },
   spitter:   { damage: 9,  range: 180, cooldown: 1.10 },
-  // Immune enemies — innate tier (lighter)
-  macrophage:  { damage: 8,  range: 30, cooldown: 1.20 }, // slow tank
-  neutrophil:  { damage: 5,  range: 26, cooldown: 0.80 }, // fast harasser
+  // Innate tier (lighter, generic roamers)
+  macrophage:     { damage: 8,  range: 30, cooldown: 1.20 }, // slow tank
+  neutrophil:     { damage: 5,  range: 26, cooldown: 0.80 }, // fast harasser
   // Adaptive tier (heavier, counter-specific)
-  nk_cell:     { damage: 22, range: 34, cooldown: 1.50 }, // heavy — counters brute
-  t_cell:      { damage: 10, range: 150, cooldown: 1.00 }, // ranged interceptor — counters spitter
+  dendritic_cell: { damage: 6,  range: 26, cooldown: 0.55 }, // anti-swarm — counters spreader
+  nk_cell:        { damage: 22, range: 34, cooldown: 1.50 }, // heavy — counters brute
+  t_cell:         { damage: 10, range: 150, cooldown: 1.00 }, // ranged interceptor — counters spitter
 };
 
 // ---------------------------------------------------------------------------

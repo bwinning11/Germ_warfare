@@ -2,18 +2,19 @@
 // Two-tier immune system — Innate scouts + Adaptive escalating siege.
 // DOM-free. All logic in pure/stateful functions, fully testable.
 //
-// INNATE TIER:
-//   - Fast scouts/first-responders present from game start.
-//   - Roam the map and converge on player units that come near.
-//   - Macrophage + neutrophil as innate units (small, fast).
-//   - Refilled when innate count drops below the patrol pool size.
+// INNATE TIER (always present, roaming):
+//   - Macrophage: slow, tanky first-responder; generic threat.
+//   - Neutrophil: fast, weak harasser; rapid-response scout.
+//   - Refilled when innate count drops below INNATE_POOL_SIZE.
 //
-// ADAPTIVE TIER:
+// ADAPTIVE TIER (escalating, memory-driven, counter-specific):
 //   - Triggered after ADAPTIVE_PUSH_INTERVAL elapses.
 //   - Threat level = f(elapsed time, army size).
-//   - Each push is bigger/harder than the previous — escalating siege.
-//   - Memory: tracks the player's dominant unit type and spawns counters.
-//   - NK cells (counter brute) + T-cells (counter spitter) as new types.
+//   - Memory: tracks player's dominant unit type and spawns targeted counters.
+//   - Dendritic cell: anti-swarm; counters Spreader (numerous, fast).
+//   - NK cell:        heavy melee; counters Brute.
+//   - T-cell:         ranged interceptor; counters Spitter.
+//   Adaptive units are visually distinct (different shapes/colors) from innate.
 // ---------------------------------------------------------------------------
 
 import { World, Entity, Vec2, GermKind } from './types';
@@ -69,8 +70,9 @@ const NK_CELL_SPEED = 65;
 const T_CELL_HP    = 55;            // counters spitter
 const T_CELL_SPEED = 80;
 
-const ADAPTIVE_NEUTROPHIL_HP    = 40;
-const ADAPTIVE_NEUTROPHIL_SPEED = 100;
+// Dendritic cell — ADAPTIVE anti-swarm (counters Spreader)
+const DENDRITIC_CELL_HP    = 35;
+const DENDRITIC_CELL_SPEED = 105;
 
 // ---------------------------------------------------------------------------
 // ID generator — offset to avoid world.ts collision
@@ -242,18 +244,18 @@ function makeTCell(pos: Vec2, moveTo: Vec2): Entity {
   };
 }
 
-/** Adaptive neutrophil (counter spreader — cheap, numerous, fast). */
-function makeAdaptiveNeutrophil(pos: Vec2, moveTo: Vec2): Entity {
+/** Dendritic cell — adaptive anti-swarm counter to Spreader. */
+function makeDendriticCell(pos: Vec2, moveTo: Vec2): Entity {
   return {
     id: immuneId(),
-    kind: 'neutrophil',
+    kind: 'dendritic_cell',
     pos: { ...pos },
     vel: { x: 0, y: 0 },
-    hp: ADAPTIVE_NEUTROPHIL_HP,
-    maxHp: ADAPTIVE_NEUTROPHIL_HP,
+    hp: DENDRITIC_CELL_HP,
+    maxHp: DENDRITIC_CELL_HP,
     owner: 'immune',
     data: {
-      speed: ADAPTIVE_NEUTROPHIL_SPEED,
+      speed: DENDRITIC_CELL_SPEED,
       moveTo: { ...moveTo },
       attackCooldownLeft: 0,
       tier: 'adaptive',
@@ -421,15 +423,15 @@ export function getMostUsedKind(world: World): GermKind | null {
 /**
  * Return the immune unit kind that counters the given germ kind.
  *
- * | Germ kind | Counter     | Rationale                              |
- * |-----------|-------------|----------------------------------------|
- * | spreader  | neutrophil  | fast, numerous — trades well vs swarms  |
- * | brute     | nk_cell     | heavy hitter — punishes tanky clustered |
- * | spitter   | t_cell      | ranged interceptor — closes fast        |
+ * | Germ kind | Counter        | Rationale                                      |
+ * |-----------|----------------|------------------------------------------------|
+ * | spreader  | dendritic_cell | anti-swarm — fast, numerous; floods the spread  |
+ * | brute     | nk_cell        | heavy melee — punishes tanky clustered brutes   |
+ * | spitter   | t_cell         | ranged interceptor — matches Spitter's range    |
  */
 export function counterKindFor(germ: GermKind): string {
   switch (germ) {
-    case 'spreader': return 'neutrophil';
+    case 'spreader': return 'dendritic_cell';
     case 'brute':    return 'nk_cell';
     case 'spitter':  return 't_cell';
   }
@@ -479,10 +481,10 @@ function _spawnAdaptivePush(world: World, as: AdaptiveState, threatFraction: num
   // Spawn heavy adaptive units
   for (let i = 0; i < heavyCount; i++) {
     const pos = spawnEdgePos(world, rng);
-    // Mix macrophage (tank) with adaptive neutrophils based on push number
+    // Mix macrophage (tank) with dendritic cells based on push number
     const unit = i % 3 === 0
       ? makeAdaptiveMacrophage(pos, target)
-      : makeAdaptiveNeutrophil(pos, target);
+      : makeDendriticCell(pos, target);
     world.entities.push(unit);
   }
 
@@ -499,9 +501,9 @@ function _spawnAdaptivePush(world: World, as: AdaptiveState, threatFraction: num
         case 't_cell':
           unit = makeTCell(pos, target);
           break;
-        case 'neutrophil':
+        case 'dendritic_cell':
         default:
-          unit = makeAdaptiveNeutrophil(pos, target);
+          unit = makeDendriticCell(pos, target);
           break;
       }
       world.entities.push(unit);

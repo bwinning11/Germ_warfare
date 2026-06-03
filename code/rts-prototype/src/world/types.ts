@@ -11,17 +11,18 @@ export type Owner = 'you' | 'immune' | 'neutral';
  * Extend this union as new entity classes are added in later tasks.
  */
 export type EntityKind =
-  | 'placeholder'   // task-1 proof-of-concept mover
-  | 'spreader'      // player germ unit (future)
-  | 'brute'         // player germ unit (future)
-  | 'spitter'       // player germ unit (future)
-  | 'base'          // player production structure (future)
-  | 'macrophage'    // immune enemy — tank, slower (innate + adaptive)
-  | 'neutrophil'    // immune enemy — fast harasser (innate scout + adaptive counter-spreader)
-  | 'nk_cell'       // adaptive immune — heavy hitter, counters brute
-  | 't_cell'        // adaptive immune — ranged interceptor, counters spitter
-  | 'antibody'      // immune projectile (future)
-  | 'organ';        // capture objective (future)
+  | 'placeholder'     // task-1 proof-of-concept mover
+  | 'spreader'        // player germ unit (future)
+  | 'brute'           // player germ unit (future)
+  | 'spitter'         // player germ unit (future)
+  | 'base'            // player production structure (future)
+  | 'macrophage'      // INNATE — slow, tanky roamer; generic first-responder
+  | 'neutrophil'      // INNATE — fast, weak harasser; rapid-response scout
+  | 'dendritic_cell'  // ADAPTIVE — anti-swarm; counters Spreader (pattern recognition)
+  | 'nk_cell'         // ADAPTIVE — heavy melee; counters Brute
+  | 't_cell'          // ADAPTIVE — ranged interceptor; counters Spitter
+  | 'antibody'        // immune projectile (future)
+  | 'organ';          // capture objective (future)
 
 /**
  * High-level state of the match.

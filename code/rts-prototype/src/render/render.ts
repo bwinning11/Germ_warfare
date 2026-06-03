@@ -18,12 +18,13 @@ const ENTITY_COLORS: Record<string, string> = {
   brute:       '#ff6644',
   spitter:     '#ffcc22',
   base:        '#8866ff',
-  // Innate tier — warmer, lighter
-  macrophage:  '#ff4455',
-  neutrophil:  '#ff8800',
-  // Adaptive tier — colder, heavier
-  nk_cell:     '#cc00ff',   // deep violet — heavy counter to brute
-  t_cell:      '#00ccff',   // icy blue — ranged counter to spitter
+  // INNATE tier — warm hues, lighter weight
+  macrophage:  '#ff4455',   // red-pink pentagon — slow, tanky roamer
+  neutrophil:  '#ff8800',   // orange diamond — fast, weak scout
+  // ADAPTIVE tier — cool/electric hues, heavier visual weight
+  dendritic_cell: '#aaff00', // acid-green star burst — anti-swarm, counters Spreader
+  nk_cell:     '#cc00ff',   // deep violet hexagon — heavy, counters Brute
+  t_cell:      '#00ccff',   // icy blue 8-star — ranged, counters Spitter
   antibody:    '#ffaacc',
   organ:       '#ffaa00',
 };
@@ -598,6 +599,74 @@ function drawTCell(
   ctx.fillRect(bx, by, barW * Math.max(0, entity.hp / entity.maxHp), barH);
 }
 
+/** Draw a dendritic cell — adaptive anti-swarm unit (counter to Spreader). */
+function drawDendriticCell(
+  ctx: CanvasRenderingContext2D,
+  entity: Entity,
+  selected: boolean,
+): void {
+  const { x, y } = entity.pos;
+  const radius = 11; // smaller than NK/macrophage — numerous but not huge
+  const color = ENTITY_COLORS.dendritic_cell;
+
+  if (selected) {
+    ctx.save();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(x, y, radius + 5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Acid-green glow
+  const grd = ctx.createRadialGradient(x, y, 0, x, y, radius * 2.4);
+  grd.addColorStop(0, color + '66');
+  grd.addColorStop(1, 'transparent');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(x, y, radius * 2.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Body: 6-pointed star (dendritic = branching processes)
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#ddff88';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  const spikes = 6;
+  for (let i = 0; i < spikes * 2; i++) {
+    const angle = (i / (spikes * 2)) * Math.PI * 2 - Math.PI / 2;
+    const r = i % 2 === 0 ? radius : radius * 0.45;
+    const px = x + Math.cos(angle) * r;
+    const py = y + Math.sin(angle) * r;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  // Label: ADPT tag
+  ctx.fillStyle = '#ccff66';
+  ctx.font = 'bold 8px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('DC', x, y + radius + 2);
+
+  // HP bar
+  const barW = radius * 2;
+  const barH = 3;
+  const bx = x - radius;
+  const by = y - radius - 6;
+  ctx.fillStyle = '#112200';
+  ctx.fillRect(bx, by, barW, barH);
+  ctx.fillStyle = color;
+  ctx.fillRect(bx, by, barW * Math.max(0, entity.hp / entity.maxHp), barH);
+}
+
 /** Draw a single entity, routing to the correct renderer by kind. */
 function drawEntity(
   ctx: CanvasRenderingContext2D,
@@ -612,6 +681,8 @@ function drawEntity(
     drawMacrophage(ctx, entity, selected);
   } else if (entity.kind === 'neutrophil') {
     drawNeutrophil(ctx, entity, selected);
+  } else if (entity.kind === 'dendritic_cell') {
+    drawDendriticCell(ctx, entity, selected);
   } else if (entity.kind === 'nk_cell') {
     drawNkCell(ctx, entity, selected);
   } else if (entity.kind === 't_cell') {
@@ -621,45 +692,102 @@ function drawEntity(
   }
 }
 
-/** Draw the rally point flag when the base is selected. */
+/**
+ * Draw the rally point flag — always visible, brighter when base is selected.
+ *
+ * - A dashed line from the base to the flag shows the connection.
+ * - When the base is selected, the flag is brighter and a hint prompts
+ *   "right-click → set rally point".
+ */
 function drawRallyPoint(
   ctx: CanvasRenderingContext2D,
   world: World,
   input: InputState,
 ): void {
   if (!world.rallyPoint) return;
-  // Only show rally when the base is selected
-  const baseSelected = world.entities.some(
-    (e) => e.kind === 'base' && input.selected.has(e.id),
-  );
-  if (!baseSelected) return;
+
+  const base = world.entities.find((e) => e.kind === 'base' && e.owner === 'you');
+  const baseSelected = base !== undefined && input.selected.has(base.id);
 
   const { x, y } = world.rallyPoint;
+  const alpha = baseSelected ? 1.0 : 0.38; // dimmer when base not selected
+  const color = baseSelected ? '#aa88ff' : '#7755cc';
+  const glowColor = baseSelected ? '#8866ff' : '#4433aa';
+
   ctx.save();
-  ctx.strokeStyle = '#8866ff';
+  ctx.globalAlpha = alpha;
+
+  // Line from base to rally point
+  if (base) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.moveTo(base.pos.x, base.pos.y);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Ground circle (anchor)
+  ctx.strokeStyle = color;
   ctx.lineWidth = 1.5;
-  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  ctx.arc(x, y, 5, 0, Math.PI * 2);
+  ctx.stroke();
+
   // Flagpole
+  ctx.strokeStyle = color;
+  ctx.lineWidth = baseSelected ? 2.5 : 1.5;
   ctx.beginPath();
   ctx.moveTo(x, y);
-  ctx.lineTo(x, y - 18);
+  ctx.lineTo(x, y - 22);
   ctx.stroke();
-  ctx.setLineDash([]);
-  // Flag triangle
-  ctx.fillStyle = '#8866ff';
+
+  // Flag triangle — filled
+  if (baseSelected) {
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur = 10;
+  }
+  ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.moveTo(x, y - 18);
-  ctx.lineTo(x + 10, y - 13);
+  ctx.moveTo(x, y - 22);
+  ctx.lineTo(x + 14, y - 15);
   ctx.lineTo(x, y - 8);
   ctx.closePath();
   ctx.fill();
-  // Circle at base of pole
-  ctx.strokeStyle = '#8866ff';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.arc(x, y, 4, 0, Math.PI * 2);
-  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // "RALLY" label (only when selected, above the flag)
+  if (baseSelected) {
+    ctx.fillStyle = '#ccaaff';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('RALLY', x + 4, y - 24);
+  }
+
   ctx.restore();
+
+  // Hint text: "right-click → set rally point" when base is selected
+  if (baseSelected) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(6, 14, 9, 0.78)';
+    ctx.strokeStyle = '#7755aa';
+    ctx.lineWidth = 1;
+    const hintX = x - 70;
+    const hintY = y + 12;
+    ctx.beginPath();
+    ctx.roundRect(hintX, hintY, 156, 18, 4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#bbaaff';
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('right-click → set rally point', hintX + 78, hintY + 9);
+    ctx.restore();
+  }
 }
 
 /** Draw the production-mix panel (bottom-left) when the base is selected. */
@@ -1129,27 +1257,46 @@ function drawWaveFlash(
 
 // ---------------------------------------------------------------------------
 // Persistent legend (bottom-right) — what every shape means.
+// Clearly separates player units, innate immune, and adaptive immune.
 // ---------------------------------------------------------------------------
 
 function drawLegend(ctx: CanvasRenderingContext2D, world: World): void {
-  const rows: Array<{ color: string; text: string }> = [
-    { color: ENTITY_COLORS.base,       text: 'BASE — your home (defend it!)' },
-    { color: ENTITY_COLORS.spreader,   text: 'YOUR GERMS (auto-produced)' },
-    { color: ENTITY_COLORS.macrophage, text: 'INNATE scouts — fast, roaming' },
-    { color: ENTITY_COLORS.nk_cell,    text: 'ADAPTIVE push — heavy siege' },
-    { color: ENTITY_COLORS.t_cell,     text: 'ADAPTIVE T-cell — counters you' },
-    { color: ENTITY_COLORS.organ,      text: 'ORGAN — hold it to WIN' },
+  // Each entry: color swatch, text, optional tier-header before it
+  interface LegendRow {
+    color: string;
+    text: string;
+    header?: string; // draws a section header line above this row
+  }
+
+  const rows: LegendRow[] = [
+    { color: ENTITY_COLORS.base,    text: 'BASE — your home (protect!)' },
+    { color: ENTITY_COLORS.organ,   text: 'ORGAN — hold to WIN' },
+    { color: ENTITY_COLORS.spreader, header: '— YOUR GERMS —', text: 'Spreader (Q) · fast swarm' },
+    { color: ENTITY_COLORS.brute,   text: 'Brute (W) · heavy melee' },
+    { color: ENTITY_COLORS.spitter, text: 'Spitter (E) · ranged acid' },
+    { color: ENTITY_COLORS.macrophage, header: '— INNATE (always roaming) —', text: 'Macrophage · slow tank' },
+    { color: ENTITY_COLORS.neutrophil, text: 'Neutrophil · fast harasser' },
+    { color: ENTITY_COLORS.dendritic_cell, header: '— ADAPTIVE (escalating) —', text: 'Dendritic · vs Spreader' },
+    { color: ENTITY_COLORS.nk_cell, text: 'NK cell · vs Brute (heavy)' },
+    { color: ENTITY_COLORS.t_cell,  text: 'T-cell · vs Spitter (ranged)' },
   ];
 
   const padX = 10;
-  const lineH = 16;
-  const boxW = 232;
-  const boxH = rows.length * lineH + 30;
+  const lineH = 15;
+  const headerH = 13;
+  // Pre-compute total height
+  let totalContentH = 0;
+  for (const r of rows) {
+    if (r.header) totalContentH += headerH;
+    totalContentH += lineH;
+  }
+  const boxW = 248;
+  const boxH = totalContentH + 30;
   const bx = world.width - boxW - 8;
   const by = world.height - boxH - 8;
 
   ctx.save();
-  ctx.fillStyle = 'rgba(6, 14, 9, 0.82)';
+  ctx.fillStyle = 'rgba(6, 14, 9, 0.88)';
   ctx.strokeStyle = '#2a5a38';
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -1163,9 +1310,18 @@ function drawLegend(ctx: CanvasRenderingContext2D, world: World): void {
   ctx.textBaseline = 'top';
   ctx.fillText('LEGEND', bx + padX, by + 8);
 
-  rows.forEach((r, i) => {
-    const ry = by + 24 + i * lineH;
-    // Swatch
+  let ry = by + 22;
+  for (const r of rows) {
+    if (r.header) {
+      // Section divider + header text
+      ctx.fillStyle = '#6a9a7a';
+      ctx.font = 'bold 9px monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(r.header, bx + padX, ry);
+      ry += headerH;
+    }
+    // Color swatch (small circle)
     ctx.fillStyle = r.color;
     ctx.beginPath();
     ctx.arc(bx + padX + 5, ry + 5, 5, 0, Math.PI * 2);
@@ -1173,8 +1329,10 @@ function drawLegend(ctx: CanvasRenderingContext2D, world: World): void {
     // Label
     ctx.fillStyle = '#dfeee5';
     ctx.font = '10px monospace';
+    ctx.textAlign = 'left';
     ctx.fillText(r.text, bx + padX + 16, ry);
-  });
+    ry += lineH;
+  }
   ctx.restore();
 
   // One-line goal/tip just above the legend box

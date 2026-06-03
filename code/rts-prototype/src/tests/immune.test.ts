@@ -312,21 +312,36 @@ describe('getMostUsedKind()', () => {
 });
 
 describe('counterKindFor()', () => {
-  it('returns a valid immune unit kind for each germ kind', () => {
-    const validKinds = ['macrophage', 'neutrophil', 't_cell', 'nk_cell'];
+  it('returns a valid adaptive immune unit kind for each germ kind', () => {
+    // Only adaptive-tier unit kinds should appear as counters
+    const validAdaptiveKinds = ['dendritic_cell', 't_cell', 'nk_cell'];
     for (const germ of ['spreader', 'brute', 'spitter'] as const) {
       const counter = counterKindFor(germ);
-      expect(validKinds).toContain(counter);
+      expect(validAdaptiveKinds).toContain(counter);
     }
   });
 
-  it('different germ kinds produce different (or strategically distinct) counters', () => {
-    // brute (tank) should be countered by something different than spreader (swarm)
-    const counterBrute    = counterKindFor('brute');
+  it('each germ kind has a distinct counter unit', () => {
+    // All three counters must be different (no shared identity)
     const counterSpreader = counterKindFor('spreader');
-    // they may differ — at minimum both must be valid strings
-    expect(typeof counterBrute).toBe('string');
-    expect(typeof counterSpreader).toBe('string');
+    const counterBrute    = counterKindFor('brute');
+    const counterSpitter  = counterKindFor('spitter');
+    expect(counterSpreader).not.toBe(counterBrute);
+    expect(counterBrute).not.toBe(counterSpitter);
+    expect(counterSpreader).not.toBe(counterSpitter);
+  });
+
+  it('spreader is countered by dendritic_cell (not neutrophil)', () => {
+    // neutrophil is innate-only; dendritic_cell is the adaptive anti-swarm
+    expect(counterKindFor('spreader')).toBe('dendritic_cell');
+  });
+
+  it('brute is countered by nk_cell', () => {
+    expect(counterKindFor('brute')).toBe('nk_cell');
+  });
+
+  it('spitter is countered by t_cell', () => {
+    expect(counterKindFor('spitter')).toBe('t_cell');
   });
 });
 
@@ -349,9 +364,39 @@ describe('adaptive memory — counter units in push', () => {
     );
     expect(adaptiveUnits.length).toBeGreaterThan(0);
 
-    // At least some of the pushed units should be the counter type
+    // At least some of the pushed units should be the counter type (dendritic_cell for spreader)
     const expectedCounter = counterKindFor('spreader');
+    expect(expectedCounter).toBe('dendritic_cell');
     const hasCounter = adaptiveUnits.some((u) => u.kind === expectedCounter);
     expect(hasCounter).toBe(true);
+  });
+
+  it('innate units are only macrophage or neutrophil (no adaptive kinds in innate pool)', () => {
+    const world = makeWorld([]);
+    const is = createInnateState();
+    tickInnate(world, is, 0);
+    const innateUnits = world.entities.filter((e) => e.data.tier === 'innate');
+    expect(innateUnits.length).toBeGreaterThan(0);
+    for (const u of innateUnits) {
+      expect(['macrophage', 'neutrophil']).toContain(u.kind);
+    }
+  });
+
+  it('adaptive units include only adaptive kinds (not neutrophil or macrophage-innate)', () => {
+    const world = makeWorld([]);
+    const as_ = createAdaptiveState();
+    tickAdaptive(world, as_, ADAPTIVE_PUSH_INTERVAL, 0.5);
+    const adaptiveUnits = world.entities.filter(
+      (e) => e.owner === 'immune' && e.data.tier === 'adaptive',
+    );
+    expect(adaptiveUnits.length).toBeGreaterThan(0);
+    // neutrophil must NOT appear in adaptive pushes
+    const hasNeutrophil = adaptiveUnits.some((u) => u.kind === 'neutrophil');
+    expect(hasNeutrophil).toBe(false);
+    // All adaptive kinds must be from the adaptive set
+    const validAdaptiveKinds = ['macrophage', 'dendritic_cell', 'nk_cell', 't_cell'];
+    for (const u of adaptiveUnits) {
+      expect(validAdaptiveKinds).toContain(u.kind);
+    }
   });
 });
