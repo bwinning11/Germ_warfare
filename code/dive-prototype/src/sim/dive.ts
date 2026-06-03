@@ -6,6 +6,7 @@ import { updateHeat, heatStage } from './heat'
 import { applyImmune, BRUTE_COST, CYST_COST } from './immune'
 import { toggleDormant } from './network'
 import { spend } from './economy'
+import { applyPickups } from './pickup'
 import type { GameState, Order, ZoneId } from './types'
 
 // Re-export so tests can import COLONIZE_TICKS from './dive'
@@ -54,6 +55,7 @@ export function initialState(): GameState {
     banked: 0,
     brutes: new Set<ZoneId>(),
     cysts: new Set<ZoneId>(),
+    collectedPickups: new Set<ZoneId>(),
   }
 }
 
@@ -177,30 +179,33 @@ export function step(state: GameState, orders: Order[]): GameState {
   // 6. Update heat (incorporates zone-loss bump from this tick)
   const newHeat = updateHeat(state.heat, hotCount, isColonizing, heatBump)
 
-  // 7. Biomass income (based on HOT connected zones after all changes)
-  const afterImmuneState: GameState = {
+  // 7. Build intermediate state with updated heat, then apply pickup boons.
+  //    Pickups that use heatPurge will reduce from the already-updated heat value.
+  const afterImmuneBase: GameState = {
     ...afterBreach,
     map: { ...afterBreach.map, zones: afterImmune },
     responders,
+    heat: newHeat,
   }
-  const gained = income(afterImmuneState)
+  const afterPickups = applyPickups(afterImmuneBase)
+
+  // 7b. Biomass income (based on HOT connected zones after all changes)
+  const gained = income(afterPickups)
 
   // 8. Check if heat has hit overwhelming → caught
-  if (heatStage(newHeat) === 'overwhelming') {
+  if (heatStage(afterPickups.heat) === 'overwhelming') {
     return {
-      ...afterImmuneState,
-      tick: afterImmuneState.tick + 1,
-      heat: newHeat,
-      biomass: afterImmuneState.biomass + gained,
+      ...afterPickups,
+      tick: afterPickups.tick + 1,
+      biomass: afterPickups.biomass + gained,
       result: 'caught',
       banked: 0,
     }
   }
 
   return {
-    ...afterImmuneState,
-    tick: afterImmuneState.tick + 1,
-    heat: newHeat,
-    biomass: afterImmuneState.biomass + gained,
+    ...afterPickups,
+    tick: afterPickups.tick + 1,
+    biomass: afterPickups.biomass + gained,
   }
 }

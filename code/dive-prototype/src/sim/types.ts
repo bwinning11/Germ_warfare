@@ -69,6 +69,11 @@ export interface GameState {
    * responder damage taken per tick (more durable than a Brute, but more expensive).
    */
   cysts: Set<ZoneId>
+  /**
+   * Zone ids whose pickup boon has already been applied. Prevents the boon from
+   * firing more than once per zone, even if ownership changes and returns.
+   */
+  collectedPickups: Set<ZoneId>
 }
 
 /** Colonize order: direct your infection toward an adjacent non-barrier zone. */
