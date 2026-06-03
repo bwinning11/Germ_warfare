@@ -19,6 +19,25 @@ Each entry uses this template:
 
 ---
 
+## 2026-06-01 — Dive enriched to a network/territory model (playtest-driven)
+
+**Context:** The v1 minimal dive prototype was playtested. After a fix pass made it legible and fair (v2), the deeper finding surfaced: the loop is **too thin** — one verb (expand), so Dormancy is a non-decision and the map is linear. Brian proposed defense and node-chaining, and asked how pickups/relics work in a dive.
+
+**Decision:** Deepen the dive into a **network/territory** model:
+- **Graph map, multiple organs, many paths** (not a line) — topology, chokepoints, and routes become real decisions.
+- **Chains + multiplier:** owned nodes connected to your **core** channel a **resource multiplier** (bigger connected network → more income per node). The immune system's signature threat becomes **severing** your network — cut-off nodes still work and stay yours but lose the multiplier (base only). Protecting your arteries is the strategic heart, and *that* is why defense matters.
+- **Defense verb:** spend biomass to hold ground — **Brute** (actively fights responders in a node) / **Cyst** (fortifies a node). The alternative to going quiet.
+- **Selective per-node dormancy:** each node runs **hot** (produces, feeds the chain, raises Heat, draws immunity) or **dormant** (safe, idle, off the multiplier). Heat derives from *hot* nodes. Replaces the global pause.
+- **Pickups** sit in specific nodes (biomass cache, mutagen, Heat-purge, one-shot power) — they drive in-dive routing (risk/reward). **Relics** = permanent evolutions banked on escape; some pickups bank as relics.
+
+**Why:** The minimal loop failed the fun gate on *depth*, not just legibility. More verbs make every choice — including Dormancy — a real tradeoff; chaining + severing turns a line into a strategy space and gives the immune system a meatier role; defense and pickups give reasons to hold ground and route.
+
+**Reversibility:** Medium — a meaningful expansion of the dive, but it builds on the same sim core; topology and constants are tunable.
+
+**Revisit if:** The enriched loop still isn't fun in prototype (rethink the core verb), or it over-complicates (trim the multiplier or defense).
+
+---
+
 ## 2026-06-01 — Prototype tech: web (TypeScript + canvas)
 
 **Context:** Choosing how to build the throwaway dive prototype (Step 1), whose only job is to test whether the dive loop is fun.
