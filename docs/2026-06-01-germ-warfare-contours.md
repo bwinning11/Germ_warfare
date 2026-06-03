@@ -34,6 +34,16 @@ These never conflate — and they should *feel* different: **Heat** is urgent an
 
 > **⚠ PIVOT (2026-06-01): the dive is now a real-time strategy (RTS) battle — you *command units* in real time, not direct-spread across a zone graph.** A directed-spread prototype (including the network/territory model below) was built and playtested; it didn't deliver the RTS feel, so we pivoted to the RTS Brian originally imagined: a base that harvests + builds units (strains) and structures (colonies), commanded in real time against the immune system, pushing toward organs. The directed-spread / network-model content below is **kept for history but superseded** for the dive's core interaction. First build: a small RTS "combat slice." See `DECISIONS.md` → "Pivot the dive to a real-time strategy battle."
 
+### RTS design (the current direction)
+A real-time strategy battle inside a body. **Combat slice (prototype):** a **base** on a 2D arena; a **biomass** economy; produce **3 germ unit types** — Spreader (fast/weak swarm), Brute (slow/tank), Spitter (ranged); **command** them (click-select, drag-box, right-click move/attack); fight the **immune system**; **win by capturing/holding an organ**, lose if the base falls.
+
+Refinements (this iteration):
+- **Production = auto / "set the mix."** You don't hand-build units one by one — you set a **production mix** (which germ types + proportions) and the base continuously converts biomass into that tide. Reflects the billions of cells in a real infection, and keeps attention on *commanding* the swarm.
+- **Reproduction is a class differentiator.** Bacteria's signature is **mitosis** (units divide); Virus hijacks host cells; Fungus spreads spores/colonies; Parasite … — *how you make more* is part of class identity.
+- **Two-tier immune system.** **Innate** = fast, generic, roaming **scouts / first-responders** (early harassment + detection). **Adaptive** = a slow, **targeted, escalating siege** the innate response summons as your activity/Heat rises — heavier, and it **remembers** you (returns stronger / counters your most-used unit).
+
+*(The directed-spread / network model below is superseded — kept for history.)*
+
 ### Form
 **Directed-spread hybrid.** You don't micro squads — you *are* the infection, guiding a growing front of infected cells. On top of that spread core sit:
 - **Strains** = semi-units (mobile, spend Biomass to spawn).
