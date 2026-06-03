@@ -19,6 +19,23 @@ Each entry uses this template:
 
 ---
 
+## 2026-06-01 — RTS build model (auto-production) + two-tier immune system
+
+**Context:** The RTS combat slice played better than the directed-spread version ("already feels better"). Refining two things Brian raised: how you build units, and how the immune system is structured.
+
+**Decision:**
+- **Build model = base + auto-production ("set the mix").** Instead of hand-building units one at a time, you set a **production mix** (which germ types + proportions) and the base continuously converts biomass into that tide — reflecting the billions of cells in a real infection, and keeping attention on *commanding* the swarm.
+- **Reproduction is a class differentiator:** Bacteria's signature ability is **mitosis** (units divide to make more); other classes reproduce differently (Virus hijacks host cells; Fungus spores/colonies; Parasite …). *How you make more* is part of class identity.
+- **Two-tier immune system:** **Innate** = fast, generic, roaming **scouts / first-responders** (early harassment + the detection layer). **Adaptive** = a slow, **targeted, escalating siege** the innate response summons as your activity/Heat rises — heavier, and it **remembers** you (returns stronger / counters your most-used unit).
+
+**Why:** Auto-production fits the swarm-of-billions fantasy and removes production-clicking tedium so attention stays on the fun (commanding); mitosis-as-ability makes reproduction a class flavor (ties to the asymmetric classes); the innate/adaptive split gives the enemy a real arc (early harassment → building targeted siege), grounded in real immunology.
+
+**Reversibility:** Easy — refinements to the RTS prototype; tunable.
+
+**Revisit if:** Auto-production feels too hands-off (add production agency), or the two-tier immune is too complex for the slice (collapse to one tier).
+
+---
+
 ## 2026-06-01 — Pivot the dive to a real-time strategy (RTS) battle
 
 **Context:** The directed-spread dive was prototyped (v1 → v2 legibility fix → enriched network/territory model) and playtested by Brian. Even after the legibility fixes, the loop wasn't fun *for him* — the zone-spread abstraction didn't deliver the RTS feel he wanted from the start. He asked to build the actual RTS he originally imagined.
