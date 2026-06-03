@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { initialState, step } from './dive'
 import { spend } from './economy'
+import { connectedMultiplier } from './network'
 
 describe('biomass income', () => {
   it('initialState has biomass 0', () => {
@@ -21,8 +22,8 @@ describe('biomass income', () => {
     expect(s1.biomass).toBe(1)
   })
 
-  it('earns +N biomass when N zones are held', () => {
-    // Manually set up a state with 3 zones owned
+  it('earns more biomass when N connected zones are held (connectivity multiplier applies)', () => {
+    // Manually set up a state with 3 zones owned — all connected to entry via open edges
     const s0 = initialState()
     const modState = {
       ...s0,
@@ -35,9 +36,12 @@ describe('biomass income', () => {
         ),
       },
     }
-    // Now entry + vessel_a + vessel_b = 3 zones owned
+    // Now entry + vessel_a + vessel_b = 3 zones, all core-connected
+    // multiplier(3) = 1 + 0.25×2 = 1.5; income = 1.5 × 3 = 4.5
     const s1 = step(modState, [])
-    expect(s1.biomass).toBe(3)
+    const expectedIncome = connectedMultiplier(3) * 3
+    expect(s1.biomass).toBeCloseTo(expectedIncome)
+    expect(s1.biomass).toBeGreaterThan(3) // strictly more than flat rate
   })
 })
 
