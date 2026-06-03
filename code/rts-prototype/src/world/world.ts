@@ -17,6 +17,7 @@ import {
   InnateState,
   AdaptiveState,
 } from './immune';
+import { BODY_MAP, computeWaypoints } from './map';
 
 // ---------------------------------------------------------------------------
 // Module-level immune state — lives alongside the world singleton
@@ -62,7 +63,7 @@ function makeUnit(pos: Vec2, moveTo: Vec2 | null = null): Entity {
     hp: 10,
     maxHp: 10,
     owner: 'you',
-    data: { moveTo, speed: SPREADER_SPEED },
+    data: { moveTo, speed: SPREADER_SPEED, waypoints: [], _waypointDest: undefined },
   };
 }
 
@@ -85,31 +86,36 @@ function makeBase(pos: Vec2): Entity {
 
 /**
  * Create a fresh World.
- * Spawns the player base on the left side with a small escort of spreaders.
+ * Spawns the player base in the BASE chamber and the organ in the ORGAN chamber.
+ * Starting spreaders cluster near the base chamber, inside navigable space.
  */
 export function createWorld(width: number, height: number): World {
-  // Base sits on the left-centre
-  const baseX = width * 0.10;
-  const baseY = height * 0.5;
-  const spacing = 36;
+  // Base sits at the centre of chamber 0 (BASE)
+  const baseCh = BODY_MAP.chambers[0];
+  const organCh = BODY_MAP.chambers[4];
+
+  const baseX = baseCh.centre.x;
+  const baseY = baseCh.centre.y;
+  const spacing = 30;
 
   const base = makeBase({ x: baseX, y: baseY });
 
-  // The capture objective sits on the FAR side of the arena — the player must
-  // build an army and fight across the map (past the immune entry edges) to it.
-  const organ = makeOrgan({ x: width * 0.88, y: height * 0.5 });
+  // The capture objective sits in the ORGAN chamber (chamber 4, far right)
+  const organ = makeOrgan({ x: organCh.centre.x, y: organCh.centre.y });
 
-  // Default rally point: just to the right of the base
-  const rallyPoint: Vec2 = { x: baseX + 160, y: baseY };
+  // Default rally point: junction west chamber (chamber 1)
+  const jctW = BODY_MAP.chambers[1];
+  const rallyPoint: Vec2 = { x: jctW.centre.x - 40, y: jctW.centre.y };
 
-  // A few starting spreaders clustered to the right of the base
+  // A few starting spreaders clustered to the right of the base, still inside
+  // the BASE chamber / entry of vessel 0→1
   const offsets: Vec2[] = [
-    { x: 90,  y: -spacing },
-    { x: 130, y: -spacing },
-    { x: 90,  y: 0        },
-    { x: 130, y: 0        },
-    { x: 90,  y:  spacing },
-    { x: 130, y:  spacing },
+    { x: 55,  y: -spacing },
+    { x: 85,  y: -spacing },
+    { x: 55,  y: 0        },
+    { x: 85,  y: 0        },
+    { x: 55,  y:  spacing },
+    { x: 85,  y:  spacing },
   ];
 
   const units: Entity[] = offsets.map((o) =>
@@ -188,23 +194,51 @@ export function update(world: World, dt: number): World {
 
   const units = world.entities;
 
-  // --- Movement toward moveTo (skip static structures) ---
+  // --- Vessel-lane movement: advance through waypoints toward moveTo ---
   for (const e of units) {
     if (e.kind === 'base') continue;
     const moveTo = e.data.moveTo as Vec2 | null;
-    if (!moveTo) continue;
+    if (!moveTo) {
+      // No destination — idle, bleed velocity
+      e.vel.x *= 0.85;
+      e.vel.y *= 0.85;
+      continue;
+    }
 
-    const dx = moveTo.x - e.pos.x;
-    const dy = moveTo.y - e.pos.y;
+    // Ensure waypoints exist. If they're missing or stale (moveTo changed),
+    // recompute them. We detect staleness by comparing the stored finalDest.
+    let waypoints = e.data.waypoints as Vec2[] | undefined;
+    const storedDest = e.data._waypointDest as Vec2 | undefined;
+
+    const destChanged = !storedDest ||
+      Math.abs(storedDest.x - moveTo.x) > 1 ||
+      Math.abs(storedDest.y - moveTo.y) > 1;
+
+    if (!waypoints || waypoints.length === 0 || destChanged) {
+      waypoints = computeWaypoints(e.pos, moveTo);
+      e.data.waypoints = waypoints;
+      e.data._waypointDest = { ...moveTo };
+    }
+
+    // Current sub-target: first waypoint in the list
+    const subTarget = waypoints[0];
+    const dx = subTarget.x - e.pos.x;
+    const dy = subTarget.y - e.pos.y;
     const dist = Math.hypot(dx, dy);
 
+    // Arrival at this waypoint?
     if (dist <= ARRIVAL_RADIUS) {
-      // Snap to target, clear moveTo, zero velocity
-      e.pos.x = moveTo.x;
-      e.pos.y = moveTo.y;
-      e.vel.x = 0;
-      e.vel.y = 0;
-      e.data.moveTo = null;
+      waypoints.shift(); // advance to next waypoint
+      if (waypoints.length === 0) {
+        // Arrived at final destination
+        e.pos.x = moveTo.x;
+        e.pos.y = moveTo.y;
+        e.vel.x = 0;
+        e.vel.y = 0;
+        e.data.moveTo = null;
+        e.data.waypoints = [];
+        e.data._waypointDest = undefined;
+      }
       continue;
     }
 
@@ -212,7 +246,7 @@ export function update(world: World, dt: number): World {
     const nx = dx / dist;
     const ny = dy / dist;
 
-    // Set velocity directly (not acceleration) for crisp, predictable feel
+    // Set velocity directly for crisp, predictable feel
     e.vel.x = nx * speed;
     e.vel.y = ny * speed;
   }
@@ -246,7 +280,7 @@ export function update(world: World, dt: number): World {
     e.pos.x += e.vel.x * dt;
     e.pos.y += e.vel.y * dt;
 
-    // Clamp (no bouncing — units just stop at walls)
+    // Hard clamp to arena bounds (no bouncing)
     e.pos.x = Math.max(0, Math.min(world.width, e.pos.x));
     e.pos.y = Math.max(0, Math.min(world.height, e.pos.y));
   }

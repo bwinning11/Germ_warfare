@@ -4,6 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import { World, Entity, Vec2 } from './types';
+import { BODY_MAP, computeWaypoints } from './map';
 
 // ---------------------------------------------------------------------------
 // Tunable constants — adjust these to change wave feel
@@ -54,26 +55,24 @@ function waveId(): string {
 }
 
 /**
- * Pick a random spawn position on one of the map edges.
- * Entry points are concentrated on the right side and top/bottom edges —
- * matching biological sense (vessels entering from the far side of the arena).
+ * Pick a spawn position inside the ORGAN chamber or one of its adjacent
+ * vessel entry points (chambers 2 or 3 — the north/south junction chambers).
+ * Immune units enter the body from the far side (organ side) and push
+ * through the vessel network toward the player.
  */
-function spawnPos(world: World, rng: () => number): Vec2 {
-  const edge = Math.floor(rng() * 4); // 0=right, 1=top, 2=bottom, 3=right-again (weighted)
-  const margin = 20;
-  switch (edge % 3) {
-    case 0: // right edge
-      return { x: world.width - margin, y: margin + rng() * (world.height - margin * 2) };
-    case 1: // top edge — biased toward the right half
-      return { x: world.width * 0.5 + rng() * world.width * 0.5, y: margin };
-    case 2: // bottom edge — biased toward the right half
-      return { x: world.width * 0.5 + rng() * world.width * 0.5, y: world.height - margin };
-    default:
-      return { x: world.width - margin, y: world.height / 2 };
-  }
+function spawnPos(_world: World, rng: () => number): Vec2 {
+  // Immune units spawn in/near one of: organ chamber (4), junction N (2), junction S (3)
+  const spawnChamberIds = [4, 2, 3, 4]; // weighted toward the organ chamber
+  const chId = spawnChamberIds[Math.floor(rng() * spawnChamberIds.length)];
+  const ch = BODY_MAP.chambers[chId];
+  // Scatter within ~60% of the chamber radius so units don't all stack on the centre
+  const angle = rng() * Math.PI * 2;
+  const r = rng() * ch.radius * 0.6;
+  return { x: ch.centre.x + Math.cos(angle) * r, y: ch.centre.y + Math.sin(angle) * r };
 }
 
 function makeMacrophage(pos: Vec2, targetPos: Vec2): Entity {
+  const waypoints = computeWaypoints(pos, targetPos);
   return {
     id: waveId(),
     kind: 'macrophage',
@@ -85,12 +84,15 @@ function makeMacrophage(pos: Vec2, targetPos: Vec2): Entity {
     data: {
       speed: MACROPHAGE_SPEED,
       moveTo: { ...targetPos },
+      waypoints,
+      _waypointDest: { ...targetPos },
       attackCooldownLeft: 0,
     },
   };
 }
 
 function makeNeutrophil(pos: Vec2, targetPos: Vec2): Entity {
+  const waypoints = computeWaypoints(pos, targetPos);
   return {
     id: waveId(),
     kind: 'neutrophil',
@@ -102,6 +104,8 @@ function makeNeutrophil(pos: Vec2, targetPos: Vec2): Entity {
     data: {
       speed: NEUTROPHIL_SPEED,
       moveTo: { ...targetPos },
+      waypoints,
+      _waypointDest: { ...targetPos },
       attackCooldownLeft: 0,
     },
   };
@@ -147,14 +151,29 @@ export function immuneTargetFor(immune: Entity, world: World): Entity | null {
  * Update moveTo for all immune units — call each sim step.
  * This is the core enemy AI: continuously re-target and steer.
  * The actual movement is handled by the generic movement system in world.ts.
+ *
+ * When the target changes significantly, we invalidate the waypoint cache so
+ * world.ts recomputes the route on the next movement tick.
  */
 export function tickImmunAI(world: World): void {
   for (const e of world.entities) {
     if (e.owner !== 'immune') continue;
 
     const target = immuneTargetFor(e, world);
-    if (target) {
-      e.data.moveTo = { ...target.pos };
+    if (!target) continue;
+
+    const newDest = { ...target.pos };
+    const oldDest = e.data.moveTo as Vec2 | null;
+
+    // Only invalidate waypoints when the target has moved enough to matter —
+    // avoids thrashing the path cache every frame while chasing.
+    const RETARGET_THRESHOLD = 40; // px
+    if (!oldDest ||
+        Math.hypot(newDest.x - oldDest.x, newDest.y - oldDest.y) > RETARGET_THRESHOLD) {
+      e.data.moveTo = newDest;
+      // Clear waypoint cache — world.ts will recompute next tick
+      e.data.waypoints = [];
+      e.data._waypointDest = undefined;
     }
   }
 }

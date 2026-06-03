@@ -54,7 +54,14 @@ export interface Entity {
   /** Max hit points — useful for health-bar rendering later. */
   maxHp: number;
   owner: Owner;
-  /** Arbitrary extra data for kind-specific state (attack cooldown, state machine, etc.). */
+  /**
+   * Arbitrary extra data for kind-specific state (attack cooldown, state machine, etc.).
+   *
+   * Movement fields used by the vessel-lane system:
+   *   moveTo      : final destination (Vec2 | null)
+   *   waypoints   : intermediate chamber waypoints still to traverse (Vec2[])
+   *   speed       : movement speed in px/s (number)
+   */
   data: Record<string, unknown>;
 }
 

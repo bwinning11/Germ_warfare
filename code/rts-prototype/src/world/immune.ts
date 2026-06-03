@@ -18,6 +18,7 @@
 // ---------------------------------------------------------------------------
 
 import { World, Entity, Vec2, GermKind } from './types';
+import { BODY_MAP, computeWaypoints } from './map';
 
 // ---------------------------------------------------------------------------
 // Tunable constants
@@ -126,19 +127,15 @@ export function createAdaptiveState(): AdaptiveState {
 // Spawn helpers
 // ---------------------------------------------------------------------------
 
-function spawnEdgePos(world: World, rng: () => number): Vec2 {
-  const edge = Math.floor(rng() * 4);
-  const margin = 20;
-  switch (edge % 3) {
-    case 0:
-      return { x: world.width - margin, y: margin + rng() * (world.height - margin * 2) };
-    case 1:
-      return { x: world.width * 0.5 + rng() * world.width * 0.5, y: margin };
-    case 2:
-      return { x: world.width * 0.5 + rng() * world.width * 0.5, y: world.height - margin };
-    default:
-      return { x: world.width - margin, y: world.height / 2 };
-  }
+function spawnEdgePos(_world: World, rng: () => number): Vec2 {
+  // Immune units spawn in/near the organ side chambers (4, 2, 3) and move
+  // through the vessel network toward the player — same as wave spawns.
+  const spawnChamberIds = [4, 2, 3, 4];
+  const chId = spawnChamberIds[Math.floor(rng() * spawnChamberIds.length)];
+  const ch = BODY_MAP.chambers[chId];
+  const angle = rng() * Math.PI * 2;
+  const r = rng() * ch.radius * 0.6;
+  return { x: ch.centre.x + Math.cos(angle) * r, y: ch.centre.y + Math.sin(angle) * r };
 }
 
 function rngFromSeed(seed: number): () => number {
@@ -151,6 +148,7 @@ function rngFromSeed(seed: number): () => number {
 
 /** Build an innate macrophage entity. */
 function makeInnateMacrophage(pos: Vec2, moveTo: Vec2): Entity {
+  const waypoints = computeWaypoints(pos, moveTo);
   return {
     id: immuneId(),
     kind: 'macrophage',
@@ -162,6 +160,8 @@ function makeInnateMacrophage(pos: Vec2, moveTo: Vec2): Entity {
     data: {
       speed: INNATE_MACROPHAGE_SPEED,
       moveTo: { ...moveTo },
+      waypoints,
+      _waypointDest: { ...moveTo },
       attackCooldownLeft: 0,
       tier: 'innate',
     },
@@ -170,6 +170,7 @@ function makeInnateMacrophage(pos: Vec2, moveTo: Vec2): Entity {
 
 /** Build an innate neutrophil entity. */
 function makeInnateNeutrophil(pos: Vec2, moveTo: Vec2): Entity {
+  const waypoints = computeWaypoints(pos, moveTo);
   return {
     id: immuneId(),
     kind: 'neutrophil',
@@ -181,6 +182,8 @@ function makeInnateNeutrophil(pos: Vec2, moveTo: Vec2): Entity {
     data: {
       speed: INNATE_NEUTROPHIL_SPEED,
       moveTo: { ...moveTo },
+      waypoints,
+      _waypointDest: { ...moveTo },
       attackCooldownLeft: 0,
       tier: 'innate',
     },
@@ -189,6 +192,7 @@ function makeInnateNeutrophil(pos: Vec2, moveTo: Vec2): Entity {
 
 /** Build an adaptive macrophage (heavier version). */
 function makeAdaptiveMacrophage(pos: Vec2, moveTo: Vec2): Entity {
+  const waypoints = computeWaypoints(pos, moveTo);
   return {
     id: immuneId(),
     kind: 'macrophage',
@@ -200,6 +204,8 @@ function makeAdaptiveMacrophage(pos: Vec2, moveTo: Vec2): Entity {
     data: {
       speed: ADAPTIVE_MACROPHAGE_SPEED,
       moveTo: { ...moveTo },
+      waypoints,
+      _waypointDest: { ...moveTo },
       attackCooldownLeft: 0,
       tier: 'adaptive',
     },
@@ -208,6 +214,7 @@ function makeAdaptiveMacrophage(pos: Vec2, moveTo: Vec2): Entity {
 
 /** NK cell — adaptive counter to brute. */
 function makeNkCell(pos: Vec2, moveTo: Vec2): Entity {
+  const waypoints = computeWaypoints(pos, moveTo);
   return {
     id: immuneId(),
     kind: 'nk_cell',
@@ -219,6 +226,8 @@ function makeNkCell(pos: Vec2, moveTo: Vec2): Entity {
     data: {
       speed: NK_CELL_SPEED,
       moveTo: { ...moveTo },
+      waypoints,
+      _waypointDest: { ...moveTo },
       attackCooldownLeft: 0,
       tier: 'adaptive',
     },
@@ -227,6 +236,7 @@ function makeNkCell(pos: Vec2, moveTo: Vec2): Entity {
 
 /** T-cell — adaptive counter to spitter. */
 function makeTCell(pos: Vec2, moveTo: Vec2): Entity {
+  const waypoints = computeWaypoints(pos, moveTo);
   return {
     id: immuneId(),
     kind: 't_cell',
@@ -238,6 +248,8 @@ function makeTCell(pos: Vec2, moveTo: Vec2): Entity {
     data: {
       speed: T_CELL_SPEED,
       moveTo: { ...moveTo },
+      waypoints,
+      _waypointDest: { ...moveTo },
       attackCooldownLeft: 0,
       tier: 'adaptive',
     },
@@ -246,6 +258,7 @@ function makeTCell(pos: Vec2, moveTo: Vec2): Entity {
 
 /** Dendritic cell — adaptive anti-swarm counter to Spreader. */
 function makeDendriticCell(pos: Vec2, moveTo: Vec2): Entity {
+  const waypoints = computeWaypoints(pos, moveTo);
   return {
     id: immuneId(),
     kind: 'dendritic_cell',
@@ -257,6 +270,8 @@ function makeDendriticCell(pos: Vec2, moveTo: Vec2): Entity {
     data: {
       speed: DENDRITIC_CELL_SPEED,
       moveTo: { ...moveTo },
+      waypoints,
+      _waypointDest: { ...moveTo },
       attackCooldownLeft: 0,
       tier: 'adaptive',
     },
@@ -308,12 +323,16 @@ export function innateRoamTarget(immune: Entity, world: World, rngSeed: number):
     };
   }
 
-  // No nearby player — pick a random wander point biased toward the right half of map
+  // No nearby player — pick a random chamber centre to wander toward.
+  // This ensures innate units stay in navigable space while patrolling.
   const rng = rngFromSeed(rngSeed);
-  const margin = 60;
+  // Bias toward the player-side chambers (0, 1) for pressure, but mix in
+  // central chambers (2, 3) to give varied patrol patterns.
+  const wander = BODY_MAP.chambers[Math.floor(rng() * BODY_MAP.chambers.length)];
+  const jitter = 40;
   return {
-    x: margin + rng() * (world.width - margin * 2),
-    y: margin + rng() * (world.height - margin * 2),
+    x: wander.centre.x + (rng() - 0.5) * jitter,
+    y: wander.centre.y + (rng() - 0.5) * jitter,
   };
 }
 

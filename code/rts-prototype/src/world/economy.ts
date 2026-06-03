@@ -5,6 +5,7 @@
 
 import { World, Entity, ProductionMix, GermKind } from './types';
 import { nextId } from './world';
+import { computeWaypoints } from './map';
 
 // ---------------------------------------------------------------------------
 // Unit type definitions
@@ -89,6 +90,7 @@ export function produce(
     : { x: world.width * 0.15, y: world.height * 0.5 };
 
   const moveTo = world.rallyPoint ? { ...world.rallyPoint } : null;
+  const waypoints = moveTo ? computeWaypoints(spawnPos, moveTo) : [];
 
   const unit: Entity = {
     id: nextId(),
@@ -98,7 +100,12 @@ export function produce(
     hp: def.hp,
     maxHp: def.hp,
     owner: 'you',
-    data: { moveTo, speed: def.speed },
+    data: {
+      moveTo,
+      speed: def.speed,
+      waypoints,
+      _waypointDest: moveTo ? { ...moveTo } : undefined,
+    },
   };
 
   world.biomass -= def.cost;

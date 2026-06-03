@@ -11,6 +11,7 @@ import { WaveState, WAVE_INTERVAL } from '../world/waves';
 import { waveState, adaptiveState } from '../world/world';
 import { ADAPTIVE_PUSH_INTERVAL } from '../world/immune';
 import { CAPTURE_TIME, CAPTURE_RADIUS, findOrgan } from '../world/capture';
+import { BODY_MAP } from '../world/map';
 
 const ENTITY_COLORS: Record<string, string> = {
   placeholder: '#44ff88',
@@ -33,32 +34,138 @@ function entityColor(entity: Entity): string {
   return ENTITY_COLORS[entity.kind] ?? '#ffffff';
 }
 
-/** Draw the background — a dark organic-looking arena. */
-function drawBackground(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-  ctx.fillStyle = '#0a1a0f';
+
+// ---------------------------------------------------------------------------
+// Vessel-lane body map rendering
+// ---------------------------------------------------------------------------
+
+/**
+ * Draw the vessel-lane body map — tissue background, vessel corridors,
+ * chamber open areas, and chokepoint markers.
+ *
+ * Render order (back to front):
+ *  1. Tissue wall fill (dark maroon / opaque body background)
+ *  2. Vessel lane corridors (lighter, semi-transparent)
+ *  3. Chamber open areas (brightest — navigable zones)
+ *  4. Vessel centrelines (faint dotted guide)
+ *  5. Chokepoint markers at vessel openings
+ *  6. Chamber labels
+ */
+function drawBodyMap(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+  // 1. Tissue wall — fills the whole canvas behind everything
+  ctx.fillStyle = '#0d0808';
   ctx.fillRect(0, 0, width, height);
 
-  // Subtle grid to give spatial reference
-  ctx.strokeStyle = '#0f2a18';
-  ctx.lineWidth = 1;
-  const gridSize = 60;
-  for (let x = 0; x <= width; x += gridSize) {
+  // 2. Vessel lanes — rounded rectangles along the centreline between chambers
+  for (const vessel of BODY_MAP.vessels) {
+    const a = BODY_MAP.chambers[vessel.a].centre;
+    const b = BODY_MAP.chambers[vessel.b].centre;
+    const hw = vessel.halfWidth;
+
+    // Direction and perpendicular
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) continue;
+    const nx = dx / len;
+    const ny = dy / len;
+    const px = -ny; // perpendicular
+    const py = nx;
+
+    // Four corners of the vessel lane
+    const corners = [
+      { x: a.x + px * hw, y: a.y + py * hw },
+      { x: b.x + px * hw, y: b.y + py * hw },
+      { x: b.x - px * hw, y: b.y - py * hw },
+      { x: a.x - px * hw, y: a.y - py * hw },
+    ];
+
+    ctx.save();
+    ctx.fillStyle = '#1a0b12';
+    ctx.strokeStyle = '#3a1a22';
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
+    ctx.moveTo(corners[0].x, corners[0].y);
+    for (let i = 1; i < corners.length; i++) {
+      ctx.lineTo(corners[i].x, corners[i].y);
+    }
+    ctx.closePath();
+    ctx.fill();
     ctx.stroke();
-  }
-  for (let y = 0; y <= height; y += gridSize) {
+    ctx.restore();
+
+    // Faint centreline guide (dashed)
+    ctx.save();
+    ctx.strokeStyle = '#3a1828';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 8]);
     ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(width, y);
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  // 3. Chambers — circular open areas, brighter than tissue
+  for (const ch of BODY_MAP.chambers) {
+    const { x, y } = ch.centre;
+    const r = ch.radius;
+
+    // Chamber fill gradient — brighter at centre
+    const grd = ctx.createRadialGradient(x, y, 0, x, y, r);
+    grd.addColorStop(0, '#200f16');
+    grd.addColorStop(0.7, '#180b11');
+    grd.addColorStop(1, '#0d0808');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Chamber border
+    ctx.strokeStyle = '#4a1a2a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.stroke();
   }
 
-  // Arena border
-  ctx.strokeStyle = '#1a4428';
-  ctx.lineWidth = 3;
-  ctx.strokeRect(1.5, 1.5, width - 3, height - 3);
+  // 4. Chokepoint markers — small arrows/diamonds at vessel openings
+  for (const vessel of BODY_MAP.vessels) {
+    const a = BODY_MAP.chambers[vessel.a].centre;
+    const b = BODY_MAP.chambers[vessel.b].centre;
+    const midX = (a.x + b.x) / 2;
+    const midY = (a.y + b.y) / 2;
+
+    // Diamond at midpoint — shows the chokepoint
+    ctx.save();
+    ctx.fillStyle = '#5a2030';
+    ctx.strokeStyle = '#8a3048';
+    ctx.lineWidth = 1;
+    const ds = 5; // half-size of diamond
+    ctx.beginPath();
+    ctx.moveTo(midX, midY - ds);
+    ctx.lineTo(midX + ds, midY);
+    ctx.lineTo(midX, midY + ds);
+    ctx.lineTo(midX - ds, midY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 5. Chamber labels (tiny, low-contrast — visible but not distracting)
+  for (const ch of BODY_MAP.chambers) {
+    // Skip BASE and ORGAN — those are labelled by drawBase / drawOrgan
+    if (ch.label === 'BASE' || ch.label === 'ORGAN') continue;
+    ctx.save();
+    ctx.fillStyle = '#6a3040';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(ch.label.toUpperCase(), ch.centre.x, ch.centre.y - ch.radius - 3);
+    ctx.restore();
+  }
 }
 
 /** Draw the base structure (larger hexagonal shape). */
@@ -1357,7 +1464,8 @@ export function render(
 ): void {
   const { width, height } = world;
 
-  drawBackground(ctx, width, height);
+  // Draw vessel-lane body map (replaces plain dark background + grid)
+  drawBodyMap(ctx, width, height);
 
   // Draw rally point before units so units render on top
   drawRallyPoint(ctx, world, input);
