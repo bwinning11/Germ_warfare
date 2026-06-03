@@ -5,6 +5,7 @@
 import { World, Entity } from '../world/types';
 import { InputState, MoveMarker } from '../input/input';
 import { normaliseRect } from '../world/selection';
+import { UNIT_DEFS } from '../world/economy';
 
 const ENTITY_COLORS: Record<string, string> = {
   placeholder: '#44ff88',
@@ -49,8 +50,84 @@ function drawBackground(ctx: CanvasRenderingContext2D, width: number, height: nu
   ctx.strokeRect(1.5, 1.5, width - 3, height - 3);
 }
 
-/** Draw a single entity as a circle with a direction indicator. */
-function drawEntity(
+/** Draw the base structure (larger hexagonal shape). */
+function drawBase(
+  ctx: CanvasRenderingContext2D,
+  entity: Entity,
+  selected: boolean,
+): void {
+  const { x, y } = entity.pos;
+  const radius = 28;
+  const color = ENTITY_COLORS.base;
+
+  // Selection ring
+  if (selected) {
+    ctx.save();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = '#aa88ff';
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(x, y, radius + 8, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Outer glow
+  const grd = ctx.createRadialGradient(x, y, 0, x, y, radius * 2.2);
+  grd.addColorStop(0, color + '44');
+  grd.addColorStop(1, 'transparent');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(x, y, radius * 2.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Hexagon body
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#ccaaff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2 - Math.PI / 6;
+    const px = x + Math.cos(angle) * radius;
+    const py = y + Math.sin(angle) * radius;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  // Inner nucleus dot
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(x, y, 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // HP bar (only if damaged)
+  if (entity.hp < entity.maxHp) {
+    const barW = radius * 2;
+    const barH = 4;
+    const bx = x - radius;
+    const by = y - radius - 8;
+    ctx.fillStyle = '#333';
+    ctx.fillRect(bx, by, barW, barH);
+    ctx.fillStyle = '#aa66ff';
+    ctx.fillRect(bx, by, barW * (entity.hp / entity.maxHp), barH);
+  }
+
+  // "BASE" label
+  ctx.fillStyle = '#ddbbff';
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('BASE', x, y + radius + 4);
+}
+
+/** Draw a single unit entity as a circle with a direction indicator. */
+function drawUnit(
   ctx: CanvasRenderingContext2D,
   entity: Entity,
   selected: boolean,
@@ -111,6 +188,139 @@ function drawEntity(
   }
 }
 
+/** Draw a single entity, routing to the correct renderer by kind. */
+function drawEntity(
+  ctx: CanvasRenderingContext2D,
+  entity: Entity,
+  selected: boolean,
+): void {
+  if (entity.kind === 'base') {
+    drawBase(ctx, entity, selected);
+  } else {
+    drawUnit(ctx, entity, selected);
+  }
+}
+
+/** Draw the rally point flag when the base is selected. */
+function drawRallyPoint(
+  ctx: CanvasRenderingContext2D,
+  world: World,
+  input: InputState,
+): void {
+  if (!world.rallyPoint) return;
+  // Only show rally when the base is selected
+  const baseSelected = world.entities.some(
+    (e) => e.kind === 'base' && input.selected.has(e.id),
+  );
+  if (!baseSelected) return;
+
+  const { x, y } = world.rallyPoint;
+  ctx.save();
+  ctx.strokeStyle = '#8866ff';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 3]);
+  // Flagpole
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x, y - 18);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // Flag triangle
+  ctx.fillStyle = '#8866ff';
+  ctx.beginPath();
+  ctx.moveTo(x, y - 18);
+  ctx.lineTo(x + 10, y - 13);
+  ctx.lineTo(x, y - 8);
+  ctx.closePath();
+  ctx.fill();
+  // Circle at base of pole
+  ctx.strokeStyle = '#8866ff';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(x, y, 4, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Draw the production panel (bottom-left) when the base is selected. */
+function drawProductionPanel(
+  ctx: CanvasRenderingContext2D,
+  world: World,
+  input: InputState,
+): void {
+  const baseSelected = world.entities.some(
+    (e) => e.kind === 'base' && input.selected.has(e.id),
+  );
+  if (!baseSelected) return;
+
+  const panelX = 10;
+  const panelY = world.height - 110;
+  const panelW = 310;
+  const panelH = 96;
+
+  // Panel background
+  ctx.fillStyle = 'rgba(10, 8, 20, 0.82)';
+  ctx.strokeStyle = '#8866ff';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(panelX, panelY, panelW, panelH, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#ccaaff';
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText('PRODUCTION  (base selected)', panelX + 10, panelY + 8);
+
+  const units: Array<{ key: string; label: string; kind: 'spreader' | 'brute' | 'spitter'; color: string }> = [
+    { key: 'Q', label: 'Spreader', kind: 'spreader', color: ENTITY_COLORS.spreader },
+    { key: 'W', label: 'Brute',    kind: 'brute',    color: ENTITY_COLORS.brute    },
+    { key: 'E', label: 'Spitter',  kind: 'spitter',  color: ENTITY_COLORS.spitter  },
+  ];
+
+  units.forEach((u, i) => {
+    const bx = panelX + 10 + i * 100;
+    const by = panelY + 28;
+    const bw = 90;
+    const bh = 56;
+    const def = UNIT_DEFS[u.kind];
+    const canAfford = world.biomass >= def.cost;
+
+    // Button background
+    ctx.fillStyle = canAfford ? 'rgba(40,30,60,0.9)' : 'rgba(20,15,30,0.9)';
+    ctx.strokeStyle = canAfford ? u.color : '#444';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 4);
+    ctx.fill();
+    ctx.stroke();
+
+    // Hotkey badge
+    ctx.fillStyle = canAfford ? u.color : '#666';
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`[${u.key}]`, bx + 6, by + 6);
+
+    // Unit name
+    ctx.fillStyle = canAfford ? '#ffffff' : '#666';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(u.label, bx + 6, by + 24);
+
+    // Stats line
+    ctx.fillStyle = canAfford ? '#aaaaaa' : '#555';
+    ctx.font = '9px monospace';
+    ctx.fillText(`HP:${def.hp} SPD:${def.speed}`, bx + 6, by + 36);
+
+    // Cost
+    ctx.fillStyle = canAfford ? '#88ff88' : '#ff6666';
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText(`${def.cost} BIO`, bx + 6, by + 48);
+  });
+}
+
 /** Draw the drag-selection box. */
 function drawDragBox(ctx: CanvasRenderingContext2D, input: InputState): void {
   if (!input.isDragging || !input.dragBox) return;
@@ -162,12 +372,39 @@ function drawPauseOverlay(ctx: CanvasRenderingContext2D, width: number, height: 
   ctx.fillText('PAUSED', width / 2, height / 2);
 }
 
-/** HUD — elapsed time + entity count + selection count. */
+/** HUD — biomass, elapsed time, entity count, selection count. */
 function drawHUD(
   ctx: CanvasRenderingContext2D,
   world: World,
   input: InputState,
 ): void {
+  // Biomass bar (top-right)
+  const barX = world.width - 210;
+  const barY = 8;
+  const barW = 200;
+  const barH = 20;
+  const fillFrac = Math.min(world.biomass / 200, 1); // cap bar at 200 for visual
+
+  ctx.fillStyle = 'rgba(10, 8, 20, 0.75)';
+  ctx.strokeStyle = '#44aa44';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(barX, barY, barW, barH, 3);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#33bb33';
+  ctx.beginPath();
+  ctx.roundRect(barX + 1, barY + 1, (barW - 2) * fillFrac, barH - 2, 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#aaffaa';
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`BIOMASS  ${Math.floor(world.biomass)}`, barX + barW / 2, barY + barH / 2);
+
+  // Left-side info
   ctx.fillStyle = '#aaffaa';
   ctx.font = '12px monospace';
   ctx.textAlign = 'left';
@@ -190,6 +427,9 @@ export function render(
 
   drawBackground(ctx, width, height);
 
+  // Draw rally point before units so units render on top
+  drawRallyPoint(ctx, world, input);
+
   for (const entity of world.entities) {
     drawEntity(ctx, entity, input.selected.has(entity.id));
   }
@@ -197,6 +437,7 @@ export function render(
   drawDragBox(ctx, input);
   drawMoveMarkers(ctx, input.moveMarkers);
   drawHUD(ctx, world, input);
+  drawProductionPanel(ctx, world, input);
 
   if (world.paused) {
     drawPauseOverlay(ctx, width, height);

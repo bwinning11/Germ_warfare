@@ -5,7 +5,7 @@
 
 import { createWorld, update } from './world/world';
 import { render } from './render/render';
-import { createInputState, attachInput, updateMarkers } from './input/input';
+import { createInputState, attachInput, attachKeyboard, updateMarkers } from './input/input';
 
 // ---------------------------------------------------------------------------
 // Canvas setup
@@ -31,16 +31,7 @@ const world = createWorld(CANVAS_W, CANVAS_H);
 const inputState = createInputState();
 
 attachInput(canvas, world, inputState);
-
-// ---------------------------------------------------------------------------
-// Input — Space bar toggles pause
-// ---------------------------------------------------------------------------
-window.addEventListener('keydown', (e) => {
-  if (e.code === 'Space') {
-    e.preventDefault();           // prevent page scroll
-    world.paused = !world.paused;
-  }
-});
+attachKeyboard(world, inputState);
 
 // ---------------------------------------------------------------------------
 // Fixed-timestep game loop

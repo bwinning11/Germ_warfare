@@ -6,6 +6,7 @@
 
 import { World, Entity, Vec2 } from '../world/types';
 import { unitAtPoint, unitsInRect, Rect } from '../world/selection';
+import { produce } from '../world/economy';
 
 // ---------------------------------------------------------------------------
 // Formation spread: when right-clicking with N units selected, spread their
@@ -141,18 +142,25 @@ export function attachInput(
     const pos = canvasPos(canvas, e);
 
     if (state.isDragging && state.dragBox) {
-      // Drag-box selection — replace current selection
+      // Drag-box selection — replace current selection (includes base)
       const hits = unitsInRect(world, state.dragBox);
       state.selected = new Set(hits.map((u) => u.id));
     } else {
-      // Click — try hit-test
+      // Click — try hit-test on units first, then base
       const hit = unitAtPoint(world, pos);
       if (hit) {
-        // Select only this unit
         state.selected = new Set([hit.id]);
       } else {
-        // Click on empty space — deselect all
-        state.selected.clear();
+        // Check if we clicked the base (larger hit radius)
+        const base = world.entities.find(
+          (e) => e.kind === 'base' && e.owner === 'you' &&
+                 Math.hypot(e.pos.x - pos.x, e.pos.y - pos.y) <= 32,
+        );
+        if (base) {
+          state.selected = new Set([base.id]);
+        } else {
+          state.selected.clear();
+        }
       }
     }
 
@@ -162,18 +170,30 @@ export function attachInput(
     state.dragBox = null;
   });
 
-  // --- Right-click: issue move command ---
+  // --- Right-click: set rally (if base selected alone) or issue move command ---
   canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     if (state.selected.size === 0) return;
 
     const target = canvasPos(canvas, e);
 
-    // Gather selected entities (filter out any that may have been removed)
-    const selectedUnits: Entity[] = world.entities.filter(
+    // If the ONLY selected entity is the base, set the rally point
+    const selectedEntities = world.entities.filter(
       (u) => state.selected.has(u.id) && u.owner === 'you',
     );
+    const isBaseOnlySelection =
+      selectedEntities.length === 1 && selectedEntities[0].kind === 'base';
 
+    if (isBaseOnlySelection) {
+      world.rallyPoint = { ...target };
+      state.moveMarkers.push({ pos: { ...target }, ttl: MARKER_TTL });
+      return;
+    }
+
+    // Otherwise move selected units (exclude structures from movement)
+    const selectedUnits: Entity[] = selectedEntities.filter(
+      (u) => u.kind !== 'base',
+    );
     if (selectedUnits.length === 0) return;
 
     // Assign formation targets
@@ -184,6 +204,44 @@ export function attachInput(
 
     // Brief visual marker
     state.moveMarkers.push({ pos: { ...target }, ttl: MARKER_TTL });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard handler: Space (pause), Q/W/E (production hotkeys)
+// ---------------------------------------------------------------------------
+
+/**
+ * Wire up keyboard shortcuts.
+ * - Space: toggle pause
+ * - Q / W / E: produce Spreader / Brute / Spitter (only when base is selected)
+ *
+ * Call once after createInputState() and createWorld().
+ */
+export function attachKeyboard(world: World, state: InputState): void {
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      world.paused = !world.paused;
+      return;
+    }
+
+    // Production hotkeys only fire when the base is selected
+    const baseSelected = world.entities.some(
+      (en) => en.kind === 'base' && state.selected.has(en.id),
+    );
+    if (!baseSelected) return;
+
+    const keyMap: Record<string, 'spreader' | 'brute' | 'spitter'> = {
+      KeyQ: 'spreader',
+      KeyW: 'brute',
+      KeyE: 'spitter',
+    };
+    const kind = keyMap[e.code];
+    if (kind) {
+      e.preventDefault();
+      produce(world, kind);
+    }
   });
 }
 

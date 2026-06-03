@@ -4,6 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import { World, Entity, Vec2 } from './types';
+import { tickIncome } from './economy';
 
 /** Auto-incrementing id generator. */
 let _nextId = 1;
@@ -46,35 +47,57 @@ function makeUnit(pos: Vec2, moveTo: Vec2 | null = null): Entity {
   };
 }
 
+/** Spawn the player's base at `pos`. */
+function makeBase(pos: Vec2): Entity {
+  return {
+    id: nextId(),
+    kind: 'base',
+    pos: { ...pos },
+    vel: { x: 0, y: 0 },
+    hp: 200,
+    maxHp: 200,
+    owner: 'you',
+    data: { rallyPoint: null },
+  };
+}
+
 /**
  * Create a fresh World.
- * Spawns several player units arranged in a loose cluster on the left side.
+ * Spawns the player base on the left side with a small escort of spreaders.
  */
 export function createWorld(width: number, height: number): World {
-  const cx = width * 0.18;
-  const cy = height * 0.5;
+  // Base sits on the left-centre
+  const baseX = width * 0.10;
+  const baseY = height * 0.5;
   const spacing = 36;
 
-  // 6 units in a 2-column grid
+  const base = makeBase({ x: baseX, y: baseY });
+
+  // Default rally point: just to the right of the base
+  const rallyPoint: Vec2 = { x: baseX + 160, y: baseY };
+
+  // A few starting spreaders clustered to the right of the base
   const offsets: Vec2[] = [
-    { x: 0,       y: -spacing },
-    { x: spacing, y: -spacing },
-    { x: 0,       y: 0        },
-    { x: spacing, y: 0        },
-    { x: 0,       y:  spacing },
-    { x: spacing, y:  spacing },
+    { x: 90,  y: -spacing },
+    { x: 130, y: -spacing },
+    { x: 90,  y: 0        },
+    { x: 130, y: 0        },
+    { x: 90,  y:  spacing },
+    { x: 130, y:  spacing },
   ];
 
-  const entities: Entity[] = offsets.map((o) =>
-    makeUnit({ x: cx + o.x, y: cy + o.y }),
+  const units: Entity[] = offsets.map((o) =>
+    makeUnit({ x: baseX + o.x, y: baseY + o.y }),
   );
 
   return {
-    entities,
+    entities: [base, ...units],
     width,
     height,
     elapsed: 0,
     paused: false,
+    biomass: 50,          // starting resource
+    rallyPoint,
   };
 }
 
@@ -94,10 +117,14 @@ export function update(world: World, dt: number): World {
 
   world.elapsed += dt;
 
+  // Passive biomass trickle
+  tickIncome(world, dt);
+
   const units = world.entities;
 
-  // --- Movement toward moveTo ---
+  // --- Movement toward moveTo (skip static structures) ---
   for (const e of units) {
+    if (e.kind === 'base') continue;
     const moveTo = e.data.moveTo as Vec2 | null;
     if (!moveTo) continue;
 
@@ -124,11 +151,13 @@ export function update(world: World, dt: number): World {
     e.vel.y = ny * speed;
   }
 
-  // --- Separation: cheap pairwise push-apart ---
+  // --- Separation: cheap pairwise push-apart (skip static structures) ---
   for (let i = 0; i < units.length; i++) {
     for (let j = i + 1; j < units.length; j++) {
       const a = units[i];
       const b = units[j];
+      // Structures don't participate in separation
+      if (a.kind === 'base' || b.kind === 'base') continue;
       const dx = b.pos.x - a.pos.x;
       const dy = b.pos.y - a.pos.y;
       const dist = Math.hypot(dx, dy);

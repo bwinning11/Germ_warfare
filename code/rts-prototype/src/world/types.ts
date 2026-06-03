@@ -61,4 +61,8 @@ export interface World {
   elapsed: number;
   /** Whether the simulation is currently paused. */
   paused: boolean;
+  /** Player's current biomass (resource for producing units). */
+  biomass: number;
+  /** Rally point: newly produced units move here after spawning. */
+  rallyPoint: Vec2 | null;
 }
